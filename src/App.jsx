@@ -15,6 +15,7 @@ import ComingSoon from '@/pages/ComingSoon';
 import ClientDashboard from '@/pages/ClientDashboard';
 import WorkoutSession from '@/pages/WorkoutSession';
 import WorkoutHistory from '@/pages/WorkoutHistory';
+import Activity from '@/pages/Activity';
 import Messages from '@/pages/Messages';
 import ClientMessages from '@/pages/ClientMessages';
 import ViewAsClient from '@/pages/ViewAsClient';
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="/coach/exercises"       element={<Exercises />} />
             <Route path="/coach/clients/:clientId/history" element={<WorkoutHistory />} />
             <Route path="/coach/messages"        element={<Messages />} />
+            <Route path="/coach/activity"        element={<Activity />} />
             <Route path="/coach/view-as"             element={<ViewAsClient />} />
             <Route path="/coach/view-as/:clientId"   element={<ViewAsClient />} />
           </Route>

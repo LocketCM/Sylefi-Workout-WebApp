@@ -72,6 +72,35 @@ export function useClientUnreadMessages(clientId) {
   return count;
 }
 
+// Coach: count of completed workout_logs the coach hasn't seen yet.
+// Updates in realtime when clients finish workouts.
+export function useCoachUnreadCompletions() {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      const { count: c } = await supabase
+        .from('workout_logs')
+        .select('id', { count: 'exact', head: true })
+        .eq('workout_completed', true)
+        .eq('coach_seen', false);
+      if (!cancelled) setCount(c ?? 0);
+    }
+
+    load();
+    const ch = supabase
+      .channel('coach-unread-completions')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'workout_logs' }, load)
+      .subscribe();
+
+    return () => { cancelled = true; supabase.removeChannel(ch); };
+  }, []);
+
+  return count;
+}
+
 // Prefix document.title with "(N) " whenever count > 0. We capture the
 // "base" title once on mount so re-runs don't keep stacking prefixes.
 function useDocumentTitleBadge(count) {

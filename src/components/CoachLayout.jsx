@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Users, Dumbbell, ClipboardList, MessageSquare, Eye,
+  LayoutDashboard, Users, Dumbbell, ClipboardList, MessageSquare, Eye, Activity,
   LogOut, Sun, Moon, Menu, X, ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
-import { useCoachUnreadMessages } from '@/lib/useUnreadMessages';
+import { useCoachUnreadMessages, useCoachUnreadCompletions } from '@/lib/useUnreadMessages';
 import logoUrl from '/sylefi-logo.webp';
 
 // Persistent shell for all coach pages: sidebar + mobile menu + theme toggle.
@@ -15,7 +15,8 @@ export default function CoachLayout() {
   const location = useLocation();
   const [dark, setDark] = useState(() => localStorage.getItem('sw-theme') === 'dark');
   const [menuOpen, setMenuOpen] = useState(false);
-  const unreadMessages = useCoachUnreadMessages();
+  const unreadMessages    = useCoachUnreadMessages();
+  const unreadCompletions = useCoachUnreadCompletions();
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -27,6 +28,7 @@ export default function CoachLayout() {
     { to: '/coach/clients',   icon: Users,           label: 'Clients' },
     { to: '/coach/programs',  icon: ClipboardList,   label: 'Programs' },
     { to: '/coach/exercises', icon: Dumbbell,        label: 'Exercise Library' },
+    { to: '/coach/activity',  icon: Activity,        label: 'Activity', badge: unreadCompletions },
     { to: '/coach/messages',  icon: MessageSquare,   label: 'Messages', badge: unreadMessages },
     { to: '/coach/view-as',   icon: Eye,             label: 'View as Client' },
   ];
@@ -106,7 +108,7 @@ export default function CoachLayout() {
           </button>
           <button onClick={() => setMenuOpen(!menuOpen)} className="relative p-2 rounded-lg hover:bg-sidebar-accent transition-colors">
             {menuOpen ? <X size={20} /> : <Menu size={20} />}
-            {unreadMessages > 0 && !menuOpen && (
+            {(unreadMessages > 0 || unreadCompletions > 0) && !menuOpen && (
               <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-primary" />
             )}
           </button>

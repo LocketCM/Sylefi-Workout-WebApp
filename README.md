@@ -6,6 +6,13 @@ Private training app for Sylefi Wellness. Coach manages clients and programs; cl
 - **Scale:** 1–10 clients
 - **Auth:** Coach = email login; clients = 6-char invite code only
 
+## User documentation
+
+End-user guides (plain-language, non-technical):
+
+- **[Coach Guide](docs/COACH_GUIDE.md)** — for Meg. Sign-in, dashboard tour, building & publishing programs, messaging, View as Client, troubleshooting.
+- **[Client Guide](docs/CLIENT_GUIDE.md)** — for clients. Joining via invite link, adding to phone home screen, doing workouts, messaging, history.
+
 ---
 
 ## First-time setup (do these once)

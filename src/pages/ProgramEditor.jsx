@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, Plus, Trash2, ChevronUp, ChevronDown, Search,
-  Save, Send, MessageSquarePlus, X,
+  Save, Send, MessageSquarePlus, X, UserPlus, Bookmark, Copy,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import AssignClientModal from '@/components/AssignClientModal';
 
 // The heart of the coach portal: assemble a client's program.
 //
@@ -49,6 +50,10 @@ export default function ProgramEditor() {
 
   // The "Add exercise" picker is a modal that targets a specific workout.
   const [pickerFor, setPickerFor] = useState(null); // workout local id or null
+
+  // Assign-client modal state. 'assign' = bind unassigned draft to a client.
+  // 'clone'  = clone a template into a new program for a client.
+  const [assignMode, setAssignMode] = useState(null); // null | 'assign' | 'clone'
 
   useEffect(() => {
     (async () => {
@@ -149,6 +154,14 @@ export default function ProgramEditor() {
 
   // ---- Save / Publish / Unpublish ------------------------------------------
   async function save({ publish = false, unpublish = false } = {}) {
+    // Templates and unassigned drafts cannot be published — there's no client
+    // to publish them to. The Publish button is hidden in those cases, but
+    // guard here too in case anything ever calls save({publish:true}) on one.
+    if (publish && !program.client_id) {
+      setError('Assign this program to a client before publishing.');
+      return;
+    }
+
     // Safety gate: if publishing, make sure this client doesn't already have
     // a different active program. Two active programs for one client would
     // cause the client dashboard's .maybeSingle() to throw, so we have to
@@ -179,8 +192,13 @@ export default function ProgramEditor() {
     setError('');
     setSaveMsg('');
 
+    const fallbackTitle =
+      program.is_template          ? 'Untitled Template' :
+      program.client_name          ? `${program.client_name}'s Program` :
+                                     'Untitled Draft';
+
     const payload = {
-      title: title.trim() || program.client_name + "'s Program",
+      title: title.trim() || fallbackTitle,
       workouts: workouts.map((w) => ({
         id: w.id,
         title: w.title.trim(),
@@ -230,6 +248,135 @@ export default function ProgramEditor() {
     setTimeout(() => setSaveMsg(''), 2500);
   }
 
+  // ---- Assign / Clone -------------------------------------------------------
+  // Assign in place: convert this unassigned draft into a real program
+  // attached to a client. Stays a draft afterward so coach can review.
+  async function assignToClient(client) {
+    const newTitle =
+      title.trim() ||
+      (program.is_template ? `${client.first_name}'s Program` : `${client.first_name}'s Program`);
+
+    const { data, error: assignErr } = await supabase
+      .from('programs')
+      .update({
+        client_id:   client.id,
+        client_name: `${client.first_name} ${client.last_name}`,
+        title:       newTitle,
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (assignErr) throw new Error(assignErr.message);
+    setProgram(data);
+    setTitle(data.title ?? '');
+    setAssignMode(null);
+    setSaveMsg(`Assigned to ${client.first_name}`);
+    if (navigator.vibrate) navigator.vibrate(20);
+    setTimeout(() => setSaveMsg(''), 2500);
+  }
+
+  // Clone a template into a brand-new program for a client. Original template
+  // stays untouched so it can be reused. Navigates to the new program.
+  async function cloneTemplateForClient(client) {
+    // Save any in-flight edits to the template first so the clone reflects them.
+    const cleanWorkouts = workouts.map((w) => ({
+      id: w.id,
+      title: w.title.trim(),
+      coach_note: w.coach_note.trim(),
+      exercises: w.exercises.map((e) => ({
+        id: e.id,
+        exercise_id: e.exercise_id,
+        name: e.name,
+        video_url: e.video_url,
+        sets:   e.sets   === '' || e.sets   == null ? null : Number(e.sets),
+        reps:   e.reps   === '' || e.reps   == null ? null : Number(e.reps),
+        weight: e.weight === '' || e.weight == null ? null : Number(e.weight),
+        coach_note: (e.coach_note ?? '').trim(),
+      })),
+    }));
+
+    const { data: created, error: cloneErr } = await supabase
+      .from('programs')
+      .insert({
+        client_id:   client.id,
+        client_name: `${client.first_name} ${client.last_name}`,
+        title:       title.trim() || `${client.first_name}'s Program`,
+        status:      'draft',
+        is_template: false,
+        workouts:    cleanWorkouts,
+      })
+      .select()
+      .single();
+
+    if (cloneErr) throw new Error(cloneErr.message);
+    setAssignMode(null);
+    if (navigator.vibrate) navigator.vibrate(20);
+    navigate(`/coach/programs/${created.id}`);
+  }
+
+  // Convert a draft into a template (or vice versa) without changing anything else.
+  async function convertToTemplate() {
+    if (program.client_id) {
+      const ok = confirm(
+        `Convert "${program.title}" to a template?\n\n` +
+        `This will unlink it from ${program.client_name}. ` +
+        `If they had it published, it'll become a draft.\n\n` +
+        `Tip: Use "Save as new template" instead if you want to keep this program for ${program.client_name}.`
+      );
+      if (!ok) return;
+    }
+    const { data, error: convErr } = await supabase
+      .from('programs')
+      .update({
+        is_template: true,
+        client_id:   null,
+        client_name: null,
+        status:      'draft',
+      })
+      .eq('id', id)
+      .select()
+      .single();
+    if (convErr) { setError(convErr.message); return; }
+    setProgram(data);
+    setSaveMsg('Saved as template');
+    setTimeout(() => setSaveMsg(''), 2500);
+  }
+
+  // "Save as new template" — copies the current program into a new template
+  // row, leaving the original alone.
+  async function saveAsNewTemplate() {
+    const cleanWorkouts = workouts.map((w) => ({
+      id: w.id,
+      title: w.title.trim(),
+      coach_note: w.coach_note.trim(),
+      exercises: w.exercises.map((e) => ({
+        id: e.id,
+        exercise_id: e.exercise_id,
+        name: e.name,
+        video_url: e.video_url,
+        sets:   e.sets   === '' || e.sets   == null ? null : Number(e.sets),
+        reps:   e.reps   === '' || e.reps   == null ? null : Number(e.reps),
+        weight: e.weight === '' || e.weight == null ? null : Number(e.weight),
+        coach_note: (e.coach_note ?? '').trim(),
+      })),
+    }));
+    const { error: tplErr } = await supabase
+      .from('programs')
+      .insert({
+        client_id:   null,
+        client_name: null,
+        is_template: true,
+        status:      'draft',
+        title:       (title.trim() || 'Untitled') + ' (template)',
+        workouts:    cleanWorkouts,
+      });
+    if (tplErr) { setError(tplErr.message); return; }
+    setSaveMsg('Saved as new template');
+    if (navigator.vibrate) navigator.vibrate(20);
+    setTimeout(() => setSaveMsg(''), 2500);
+  }
+
   async function deleteProgram() {
     if (!confirm('Delete this program permanently? Workout logs will be kept.')) return;
     const { error: delErr } = await supabase.from('programs').delete().eq('id', id);
@@ -242,6 +389,13 @@ export default function ProgramEditor() {
   if (!program) return <div className="p-6"><p className="text-sm text-destructive">{error || 'Not found'}</p></div>;
 
   const isPublished = program.status === 'active';
+  const isTemplate  = program.is_template === true;
+  const isUnassigned = !program.client_id && !isTemplate;
+
+  const headerLabel =
+    isTemplate   ? 'Template · Reusable' :
+    isUnassigned ? 'Unassigned draft' :
+                   `${program.client_name} · ${isPublished ? 'Published' : 'Draft'}`;
 
   return (
     <div className="p-6 max-w-4xl mx-auto pb-32">
@@ -252,18 +406,42 @@ export default function ProgramEditor() {
 
       <div className="flex items-start justify-between gap-4 mb-6">
         <div className="flex-1 min-w-0">
-          <p className="text-xs text-muted-foreground uppercase tracking-widest">
-            {program.client_name} · {isPublished ? 'Published' : 'Draft'}
+          <p className="text-xs uppercase tracking-widest flex items-center gap-2">
+            {isTemplate && <Bookmark size={12} className="text-accent" />}
+            <span className={isTemplate ? 'text-accent font-medium' : 'text-muted-foreground'}>
+              {headerLabel}
+            </span>
           </p>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Program title"
+            placeholder={isTemplate ? 'Template name' : 'Program title'}
             className="w-full mt-1 text-3xl font-playfair font-semibold bg-transparent focus:outline-none border-b border-transparent focus:border-border pb-1"
           />
         </div>
       </div>
+
+      {/* Banner explaining the mode for templates / unassigned drafts */}
+      {(isTemplate || isUnassigned) && (
+        <div className={`mb-4 px-4 py-3 rounded-lg border text-sm flex items-start gap-2 ${
+          isTemplate
+            ? 'bg-accent/10 border-accent/30 text-accent-foreground'
+            : 'bg-secondary border-border text-muted-foreground'
+        }`}>
+          {isTemplate ? <Bookmark size={16} className="flex-shrink-0 mt-0.5 text-accent" /> : <UserPlus size={16} className="flex-shrink-0 mt-0.5" />}
+          <div>
+            <p className="font-medium text-foreground">
+              {isTemplate ? 'This is a reusable template' : 'This program is not assigned to a client yet'}
+            </p>
+            <p className="text-xs opacity-80 mt-0.5">
+              {isTemplate
+                ? 'Templates can be cloned to create new programs for any client. The template stays untouched.'
+                : 'Build it out, then assign it to a client when you\'re ready. You can also save it as a template to reuse.'}
+            </p>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 px-4 py-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>
@@ -298,40 +476,88 @@ export default function ProgramEditor() {
 
       {/* Sticky footer with save/publish actions */}
       <div className="fixed bottom-0 left-0 md:left-64 right-0 border-t border-border bg-background/95 backdrop-blur px-6 py-3 flex items-center justify-between gap-3 z-20">
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          {saveMsg && <span className="text-primary font-medium animate-fade-in">{saveMsg}</span>}
+        <div className="flex items-center gap-3 text-sm text-muted-foreground min-w-0">
+          {saveMsg && <span className="text-primary font-medium animate-fade-in truncate">{saveMsg}</span>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <button
             onClick={deleteProgram}
             className="p-2 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition"
-            title="Delete program"
+            title="Delete"
           >
             <Trash2 size={16} />
           </button>
+
+          {/* Save (always available) */}
           <button
             onClick={() => save()}
             disabled={saving}
             className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-card font-medium hover:bg-secondary transition text-sm disabled:opacity-50"
             title={isPublished ? 'Save changes (stays published)' : 'Save as draft'}
           >
-            <Save size={15} /> {saving ? 'Saving…' : isPublished ? 'Save Changes' : 'Save Draft'}
+            <Save size={15} />{' '}
+            {saving
+              ? 'Saving…'
+              : isPublished
+                ? 'Save Changes'
+                : isTemplate
+                  ? 'Save Template'
+                  : 'Save Draft'}
           </button>
-          {isPublished ? (
+
+          {/* Template-only: clone for a client */}
+          {isTemplate && (
             <button
-              onClick={() => save({ unpublish: true })}
-              disabled={saving}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary font-medium hover:opacity-90 transition text-sm disabled:opacity-50"
-            >
-              Unpublish
-            </button>
-          ) : (
-            <button
-              onClick={() => save({ publish: true })}
+              onClick={() => setAssignMode('clone')}
               disabled={saving || workouts.length === 0}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90 transition text-sm disabled:opacity-50"
+              title="Create a new program for a client from this template"
             >
-              <Send size={15} /> Publish
+              <Copy size={15} /> Use Template
+            </button>
+          )}
+
+          {/* Unassigned-only: assign to a client (in place) */}
+          {isUnassigned && (
+            <button
+              onClick={() => setAssignMode('assign')}
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90 transition text-sm disabled:opacity-50"
+            >
+              <UserPlus size={15} /> Assign to Client
+            </button>
+          )}
+
+          {/* Assigned-program: Publish / Unpublish */}
+          {!isTemplate && !isUnassigned && (
+            isPublished ? (
+              <button
+                onClick={() => save({ unpublish: true })}
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-secondary font-medium hover:opacity-90 transition text-sm disabled:opacity-50"
+              >
+                Unpublish
+              </button>
+            ) : (
+              <button
+                onClick={() => save({ publish: true })}
+                disabled={saving || workouts.length === 0}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90 transition text-sm disabled:opacity-50"
+              >
+                <Send size={15} /> Publish
+              </button>
+            )
+          )}
+
+          {/* "Save as new template" — handy on any non-template program */}
+          {!isTemplate && (
+            <button
+              onClick={saveAsNewTemplate}
+              disabled={saving || workouts.length === 0}
+              className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition text-sm disabled:opacity-50"
+              title="Save a copy of this program as a reusable template"
+            >
+              <Bookmark size={15} /> Save as Template
             </button>
           )}
         </div>
@@ -343,6 +569,24 @@ export default function ProgramEditor() {
           library={library}
           onClose={() => setPickerFor(null)}
           onPick={(ex) => addExerciseToWorkout(pickerFor, ex)}
+        />
+      )}
+
+      {/* Assign / Clone client picker */}
+      {assignMode === 'assign' && (
+        <AssignClientModal
+          title="Assign program to a client"
+          confirmLabel="Assign"
+          onClose={() => setAssignMode(null)}
+          onConfirm={assignToClient}
+        />
+      )}
+      {assignMode === 'clone' && (
+        <AssignClientModal
+          title="Use template for a client"
+          confirmLabel="Create program"
+          onClose={() => setAssignMode(null)}
+          onConfirm={cloneTemplateForClient}
         />
       )}
     </div>

@@ -1,0 +1,391 @@
+# Sylefi Wellness — Owner Troubleshooting & Cheat Sheet
+
+For Cole. Things to know, gotchas to remember, and copy-pasteable SQL/commands for fixing things on the fly. Keep this handy.
+
+---
+
+## Quick links
+
+- **Live app:** https://locketcm.github.io/Sylefi-Workout-WebApp/
+- **GitHub repo:** https://github.com/LocketCM/Sylefi-Workout-WebApp
+- **Supabase project:** https://supabase.com/dashboard → `sylefi-wellness`
+- **Project folder:** `C:\Users\colem\OneDrive\Documents\Sylefi Wellness App\Sylefi-Wellness-App`
+
+---
+
+## Architecture in 30 seconds
+
+- **Frontend:** React + Vite + Tailwind, deployed as a static site to GitHub Pages
+- **Routing:** **HashRouter** — URLs look like `/#/coach`, `/#/client`. This matters for Supabase auth (see gotchas)
+- **Backend:** Supabase (Postgres + Auth + Realtime + Row Level Security)
+- **Coach detection:** `auth.users.raw_user_meta_data.role === 'admin'`
+- **Client detection:** `clients.user_id === auth.uid()` (linked at invite-claim time)
+- **Storage of workouts/programs:** JSONB columns (not normalized tables)
+
+---
+
+## Deploying updates
+
+After making code changes:
+
+```bash
+cd "C:\Users\colem\OneDrive\Documents\Sylefi Wellness App\Sylefi-Wellness-App"
+git add .
+git commit -m "what changed"
+git push
+npm run deploy
+```
+
+`npm run deploy` builds the production bundle and pushes it to the `gh-pages` branch. Live site updates within ~30 seconds.
+
+> **If your changes don't show up:** GitHub Pages caches aggressively. Hard refresh with `Ctrl+Shift+R` (or `Cmd+Shift+R` on Mac). On phones, close the tab fully and reopen.
+
+### Rolling back a bad deploy
+
+```bash
+git log --oneline           # find the commit before the bad one
+git revert <bad-commit>     # creates a new commit undoing it
+git push
+npm run deploy
+```
+
+Don't `git reset --hard` published commits.
+
+---
+
+## Top gotchas (things that have already bitten us)
+
+### 1. New coach users don't have the admin role
+
+Creating a user via the Supabase dashboard does **not** set `raw_user_meta_data.role`. Symptom: sign in works, page flashes, gets bounced back to the home screen.
+
+**Fix:**
+```sql
+update auth.users
+set raw_user_meta_data = raw_user_meta_data || '{"role":"admin"}'::jsonb
+where email = '<email>';
+```
+Then have them sign out and back in (token needs to refresh).
+
+### 2. Supabase invite links don't work with HashRouter
+
+Supabase invite emails redirect to `<site>/#access_token=...`. HashRouter eats the `#`, so the token is lost → white screen.
+
+**Workaround:** Don't use Supabase invite links. Create users manually with email + password in the dashboard. Meg is the only coach so this is fine forever. Clients use the in-app `/join` flow with a 6-character code, not Supabase invites.
+
+### 3. Empty in-progress workout_logs rows
+
+Earlier versions of `WorkoutSession.jsx` created a `workout_logs` row immediately on page open, which cluttered history with empty "0 of N exercises" entries. Fix is in place: rows are now lazy-created via `ensureLogRow()` only on first real interaction. If you ever see a regression, check that `ensureLogRow` is awaited before the first save.
+
+To clean up legacy empty rows:
+```sql
+delete from workout_logs
+where workout_completed = false
+  and (exercise_logs is null or jsonb_array_length(exercise_logs) = 0)
+  and client_notes is null;
+```
+
+### 4. The `messages` table uses `content`, not `body`
+
+If you ever add code that reads/writes messages, the column is `content`. I got bit by this once.
+
+### 5. Vite `base` must match the GitHub repo name
+
+`vite.config.js` has `base: '/Sylefi-Workout-WebApp/'`. If you ever rename the repo, update this **and** redeploy, or every asset 404s.
+
+### 6. Program templates / unassigned drafts (added 2026-04-07)
+
+`programs` now has an `is_template` boolean and `client_id` is nullable.
+- `client_id NOT NULL` → normal assigned program (publishable)
+- `client_id NULL, is_template = false` → unassigned draft (built ahead, assigned later in place)
+- `client_id NULL, is_template = true` → reusable template (cloned each time it's used)
+
+A `programs_template_not_active` CHECK constraint **prevents publishing** any program without a client_id. If you ever see "violates check constraint programs_template_not_active", the UI is trying to publish a template/unassigned program — find the bug there, don't drop the constraint.
+
+To list them:
+```sql
+select id, title, is_template, client_id, status from programs
+where client_id is null;
+```
+
+### 7. Coach completion notifications (added 2026-04-07)
+
+`workout_logs` has a `coach_seen` boolean. Two triggers manage it:
+- **BEFORE INSERT** → if `workout_completed = true`, set `coach_seen = false`
+- **BEFORE UPDATE** → if workout transitions to completed, set `coach_seen = false`. Otherwise non-admin users can't change `coach_seen`.
+
+The Activity page bulk-updates `coach_seen = true` on view, which clears the badge. Admin role check uses `auth.jwt() -> 'user_metadata' ->> 'role' = 'admin'` — matches Gotcha #1.
+
+To manually clear the badge (e.g. if Meg complains about a stuck count):
+```sql
+update workout_logs set coach_seen = true where workout_completed = true;
+```
+
+To force a notification to reappear for testing:
+```sql
+update workout_logs set coach_seen = false where id = '<log-uuid>';
+```
+
+### 8. RLS will silently return zero rows
+
+If a query mysteriously returns nothing in production but works in the SQL editor, it's almost always a Row Level Security policy. The SQL editor runs as a superuser; the app runs as the authenticated user. Check policies in **Authentication → Policies**.
+
+---
+
+## Common Supabase SQL recipes
+
+All of these are safe to run in **SQL Editor**.
+
+### Find a client by name or email
+```sql
+select id, first_name, last_name, email, status, user_id, created_at
+from clients
+where first_name ilike '%meg%' or email ilike '%meg%';
+```
+
+### See all programs for a client
+```sql
+select id, title, status, published_at, created_at
+from programs
+where client_id = '<client-uuid>'
+order by created_at desc;
+```
+
+### Force-unpublish a program
+```sql
+update programs set status = 'draft' where id = '<program-uuid>';
+```
+
+### Delete all in-progress (incomplete) workout logs for a client
+Useful if a client wants to "start over" on a workout.
+```sql
+delete from workout_logs
+where client_id = '<client-uuid>'
+  and workout_completed = false;
+```
+
+### See a client's last 10 workout logs
+```sql
+select id, workout_title, workout_completed, completed_at, jsonb_array_length(exercise_logs) as exercises
+from workout_logs
+where client_id = '<client-uuid>'
+order by coalesce(completed_at, created_at) desc
+limit 10;
+```
+
+### Generate a fresh invite code manually
+Normally the coach UI does this. But if you need to manually re-invite:
+```sql
+update clients
+set invite_code = upper(substr(md5(random()::text), 1, 6)),
+    invite_code_expires_at = now() + interval '7 days',
+    code_used = false,
+    status = 'invited'
+where id = '<client-uuid>'
+returning invite_code;
+```
+Then send them: `https://locketcm.github.io/Sylefi-Workout-WebApp/#/join?code=<CODE>`
+
+### Reset a client to "never joined" state
+If you need to send a fresh invite to a client whose first invite was claimed by the wrong person, etc.
+```sql
+update clients
+set user_id = null, status = 'invited', code_used = false
+where id = '<client-uuid>';
+```
+
+### See all auth users and their roles
+```sql
+select id, email, raw_user_meta_data->>'role' as role, last_sign_in_at, created_at
+from auth.users
+order by created_at desc;
+```
+
+### Force-delete a user (and their client row)
+**Careful — this is destructive.**
+```sql
+-- Find them first
+select id, email from auth.users where email = '<email>';
+
+-- Delete the linked clients row first
+delete from clients where user_id = '<auth-user-uuid>';
+
+-- Then the auth user
+delete from auth.users where id = '<auth-user-uuid>';
+```
+
+### See message volume by client (last 30 days)
+```sql
+select c.first_name, c.last_name, count(*) as msgs
+from messages m
+join clients c on c.id = m.client_id
+where m.created_at > now() - interval '30 days'
+group by c.id, c.first_name, c.last_name
+order by msgs desc;
+```
+
+---
+
+## RLS troubleshooting
+
+If a client says "I can't see X" or you see suspicious empty results in the app:
+
+1. **Check the Network tab in browser DevTools** — look at the actual Supabase response. RLS denials return `200 OK` with an empty array, not an error.
+2. **Open Authentication → Policies in Supabase** — find the table, check policies for `select`, `insert`, `update`, `delete`.
+3. **Test the policy as a user** in the SQL editor:
+   ```sql
+   set local role authenticated;
+   set local "request.jwt.claim.sub" = '<auth-user-uuid>';
+   select * from clients;  -- should only show their own row
+   reset role;
+   ```
+4. **If you added a new table**, you must also enable RLS on it:
+   ```sql
+   alter table <table> enable row level security;
+   ```
+   Otherwise the anon key has full access — security hole.
+
+---
+
+## Realtime troubleshooting
+
+The app uses Supabase Realtime for live updates (programs, workout_logs, messages).
+
+- **Symptom: changes don't appear without refresh.**
+  Check that the table is in the realtime publication:
+  ```sql
+  select tablename from pg_publication_tables where pubname = 'supabase_realtime';
+  ```
+  If a table is missing:
+  ```sql
+  do $$
+  begin
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and tablename = 'messages'
+    ) then
+      alter publication supabase_realtime add table messages;
+    end if;
+  end $$;
+  ```
+
+- **Symptom: realtime works locally but not in prod.**
+  Hit **Project Settings → API** in Supabase and verify the anon key in your `.env.local` matches what's bundled in `dist/`. After rotating keys, you must rebuild + redeploy.
+
+- **Connection limits:** Free tier allows 200 concurrent realtime connections. Each open browser tab = 1 connection. We're nowhere near this for 1–15 clients.
+
+---
+
+## Auth troubleshooting
+
+### Coach can't sign in
+1. Verify the user exists: `select id, email, raw_user_meta_data from auth.users where email = '<email>';`
+2. Verify `raw_user_meta_data->>'role' = 'admin'`
+3. If not, run the fix in Gotcha #1
+4. If yes, try resetting their password from **Authentication → Users → ⋯ → Send password recovery**
+
+### Client says invite code doesn't work
+1. Check it hasn't expired or been used:
+   ```sql
+   select id, first_name, invite_code, invite_code_expires_at, code_used, status
+   from clients where invite_code = '<CODE>';
+   ```
+2. If `code_used = true` but they say they never claimed it: someone (maybe Meg testing?) already used it. Generate a fresh one.
+3. If `expires_at` is in the past, generate a fresh one.
+
+### "Stuck" anonymous sessions
+The `/join` flow signs the user in anonymously *before* claiming the invite. If they bail mid-flow, you can end up with orphan anonymous users in `auth.users` with `is_anonymous = true`. Cleanup:
+```sql
+delete from auth.users
+where is_anonymous = true
+  and created_at < now() - interval '1 day'
+  and id not in (select user_id from clients where user_id is not null);
+```
+
+---
+
+## Usage / quota monitoring
+
+Free tier limits to watch:
+
+| Resource | Free limit | What we use |
+|---|---|---|
+| Database size | 500 MB | <5 MB (way under) |
+| Bandwidth | 5 GB / month | Tiny — static assets are on GitHub, not Supabase |
+| Realtime concurrent connections | 200 | 1 per active tab |
+| Auth MAUs | 50,000 | Tiny |
+| Storage | 1 GB | We don't use Supabase Storage |
+
+Check current usage in **Supabase → Settings → Usage**.
+
+The first thing to bottleneck (somewhere around 150–300 active concurrent clients) would be realtime connections. Long way away.
+
+---
+
+## Where things live in the codebase
+
+```
+src/
+├── lib/
+│   ├── AuthContext.jsx        ← coach detection (role === 'admin')
+│   ├── supabase.js            ← Supabase client singleton
+│   └── useUnreadMessages.js   ← unread badges + tab title
+├── components/
+│   ├── ProtectedRoute.jsx     ← auth gate, requireCoach prop
+│   ├── CoachLayout.jsx        ← sidebar shell
+│   └── MessageThread.jsx      ← reusable chat (uses 'content' column)
+├── pages/
+│   ├── Landing.jsx
+│   ├── Login.jsx              ← coach sign in
+│   ├── JoinPage.jsx           ← client invite flow (anon → RPC → bind)
+│   ├── CoachDashboard.jsx     ← stale program reminders
+│   ├── Clients.jsx            ← invite code generation
+│   ├── Programs.jsx           ← duplicate-active warnings
+│   ├── ProgramEditor.jsx      ← publish gate, smart save button
+│   ├── ClientDashboard.jsx    ← workouts list
+│   ├── WorkoutSession.jsx     ← lazy log row + auto-save
+│   ├── WorkoutHistory.jsx     ← shared coach + client view
+│   ├── Messages.jsx           ← coach split view
+│   ├── ClientMessages.jsx     ← single thread
+│   └── ViewAsClient.jsx       ← preview mode
+└── App.jsx                    ← all routes
+```
+
+---
+
+## "Oh no" recovery checklist
+
+If something looks really broken in production:
+
+1. **Don't panic or destructive-fix.** The app is live; users are using it. Read the symptom carefully.
+2. **Reproduce locally first** — `npm run dev` and try to make it happen on `localhost`. If you can't, it's likely a deploy/cache/RLS issue, not a code issue.
+3. **Check browser DevTools console** for errors, and the Network tab for failing Supabase calls.
+4. **Check Supabase logs:** Dashboard → **Logs → API** for errors, **Logs → Auth** for auth issues.
+5. **If a recent deploy broke things,** revert the bad commit and redeploy (see "Rolling back" above) — don't try to hot-fix in panic.
+6. **Hard refresh** before assuming code is broken (`Ctrl+Shift+R`).
+7. **Take a screenshot** of any error before fixing it — useful when asking Claude for help later.
+
+---
+
+## Random useful commands
+
+```bash
+# See what's about to be deployed
+npm run build && ls dist
+
+# Preview the production build locally before deploying
+npm run preview
+
+# Check what changed since last deploy
+git log --oneline origin/gh-pages..main
+
+# Pull latest from GitHub (if you ever work from a different machine)
+git pull
+npm install      # in case dependencies changed
+```
+
+---
+
+## When in doubt
+
+Open this folder in Claude Code and ask. Claude has memory of the project's architecture, the bugs we've already fixed, and the design decisions. Paste the error message or screenshot — that's almost always enough context.

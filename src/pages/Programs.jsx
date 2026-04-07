@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, ClipboardList, CheckCircle2, PenLine, AlertTriangle } from 'lucide-react';
+import { Plus, ClipboardList, CheckCircle2, PenLine, AlertTriangle, Bookmark, FolderPlus } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 // Coach-side Programs list. Shows every program grouped by status
@@ -38,10 +38,15 @@ export default function Programs() {
     setLoading(false);
   }
 
-  const published = programs.filter((p) => p.status === 'active');
-  const drafts    = programs.filter((p) => p.status === 'draft');
+  // Templates and unassigned drafts have no client_id and live in their own
+  // sections. Everything else is grouped by status under each client.
+  const templates        = programs.filter((p) => p.is_template === true);
+  const unassigned       = programs.filter((p) => !p.is_template && !p.client_id);
+  const assigned         = programs.filter((p) => !p.is_template && p.client_id);
+  const published        = assigned.filter((p) => p.status === 'active');
+  const drafts           = assigned.filter((p) => p.status === 'draft');
   const clientsWithoutProgram = clients.filter(
-    (c) => !programs.some((p) => p.client_id === c.id && p.status !== 'completed')
+    (c) => !assigned.some((p) => p.client_id === c.id && p.status !== 'completed')
   );
 
   // Count active programs per client so we can flag duplicates.
@@ -109,6 +114,18 @@ export default function Programs() {
             </Section>
           )}
 
+          {unassigned.length > 0 && (
+            <Section title="Unassigned drafts" icon={FolderPlus} iconClass="text-muted-foreground">
+              {unassigned.map((p) => <ProgramRow key={p.id} program={p} />)}
+            </Section>
+          )}
+
+          {templates.length > 0 && (
+            <Section title="Templates" icon={Bookmark} iconClass="text-accent">
+              {templates.map((p) => <ProgramRow key={p.id} program={p} />)}
+            </Section>
+          )}
+
           {clientsWithoutProgram.length > 0 && (
             <Section title="Clients without a program" icon={ClipboardList} iconClass="text-accent">
               {clientsWithoutProgram.map((c) => (
@@ -148,33 +165,50 @@ function Section({ title, icon: Icon, iconClass, children }) {
 
 function ProgramRow({ program, duplicate = false }) {
   const workoutCount = Array.isArray(program.workouts) ? program.workouts.length : 0;
-  const statusBadge = program.status === 'active'
-    ? { text: 'Published', cls: 'bg-primary/15 text-primary' }
-    : { text: 'Draft',     cls: 'bg-secondary text-muted-foreground' };
+  const isTemplate   = program.is_template === true;
+  const isUnassigned = !isTemplate && !program.client_id;
+
+  const statusBadge = isTemplate
+    ? { text: 'Template',   cls: 'bg-accent/15 text-accent' }
+    : isUnassigned
+      ? { text: 'Unassigned', cls: 'bg-secondary text-muted-foreground' }
+      : program.status === 'active'
+        ? { text: 'Published', cls: 'bg-primary/15 text-primary' }
+        : { text: 'Draft',     cls: 'bg-secondary text-muted-foreground' };
+
+  const subtitle = isTemplate
+    ? `Reusable · ${workoutCount} workout${workoutCount === 1 ? '' : 's'}`
+    : isUnassigned
+      ? `Not assigned · ${workoutCount} workout${workoutCount === 1 ? '' : 's'}`
+      : `${program.client_name || '—'} · ${workoutCount} workout${workoutCount === 1 ? '' : 's'}` +
+        (program.published_at ? ` · published ${new Date(program.published_at).toLocaleDateString()}` : '');
 
   return (
     <Link
       to={`/coach/programs/${program.id}`}
       className={`flex items-center justify-between rounded-xl bg-card border p-4 transition ${
-        duplicate ? 'border-amber-500/50 hover:border-amber-500' : 'border-border hover:border-primary/60'
+        duplicate ? 'border-amber-500/50 hover:border-amber-500' :
+        isTemplate ? 'border-accent/30 hover:border-accent/60' :
+        'border-border hover:border-primary/60'
       }`}
     >
-      <div className="min-w-0">
-        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-          <p className="font-medium truncate">{program.title || 'Untitled program'}</p>
-          <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${statusBadge.cls}`}>
-            {statusBadge.text}
-          </span>
-          {duplicate && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-700 dark:text-amber-300">
-              <AlertTriangle size={11} /> Duplicate active
+      <div className="min-w-0 flex items-center gap-3">
+        {isTemplate && <Bookmark size={16} className="text-accent flex-shrink-0" />}
+        {isUnassigned && <FolderPlus size={16} className="text-muted-foreground flex-shrink-0" />}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+            <p className="font-medium truncate">{program.title || 'Untitled program'}</p>
+            <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${statusBadge.cls}`}>
+              {statusBadge.text}
             </span>
-          )}
+            {duplicate && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                <AlertTriangle size={11} /> Duplicate active
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">{subtitle}</p>
         </div>
-        <p className="text-xs text-muted-foreground">
-          {program.client_name || '—'} · {workoutCount} workout{workoutCount === 1 ? '' : 's'}
-          {program.published_at && ` · published ${new Date(program.published_at).toLocaleDateString()}`}
-        </p>
       </div>
     </Link>
   );
