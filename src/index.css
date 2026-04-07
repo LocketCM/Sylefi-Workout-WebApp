@@ -1,0 +1,90 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Sylefi Wellness design tokens — ported verbatim from Base44 reference.
+   Teal primary, Gold accent, dark sidebar. Dark mode via `.dark` class on <html>. */
+@layer base {
+  :root {
+    --background: 45 30% 97%;
+    --foreground: 200 25% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 200 25% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 200 25% 12%;
+    --primary: 175 52% 32%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 175 20% 92%;
+    --secondary-foreground: 175 52% 25%;
+    --muted: 45 15% 93%;
+    --muted-foreground: 200 15% 45%;
+    --accent: 42 60% 52%;
+    --accent-foreground: 0 0% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 175 15% 85%;
+    --input: 175 15% 85%;
+    --ring: 175 52% 32%;
+    --radius: 0.75rem;
+
+    --sidebar-background: 175 30% 18%;
+    --sidebar-foreground: 175 20% 90%;
+    --sidebar-primary: 42 60% 52%;
+    --sidebar-primary-foreground: 0 0% 10%;
+    --sidebar-accent: 175 30% 24%;
+    --sidebar-accent-foreground: 175 20% 90%;
+    --sidebar-border: 175 25% 22%;
+    --sidebar-ring: 42 60% 52%;
+
+    --font-inter: 'Inter', sans-serif;
+    --font-playfair: 'Playfair Display', serif;
+  }
+
+  .dark {
+    --background: 200 25% 8%;
+    --foreground: 175 20% 92%;
+    --card: 200 25% 11%;
+    --card-foreground: 175 20% 92%;
+    --popover: 200 25% 11%;
+    --popover-foreground: 175 20% 92%;
+    --primary: 175 52% 42%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 175 20% 16%;
+    --secondary-foreground: 175 20% 90%;
+    --muted: 200 20% 16%;
+    --muted-foreground: 175 15% 55%;
+    --accent: 42 60% 52%;
+    --accent-foreground: 0 0% 10%;
+    --destructive: 0 62.8% 40%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 200 20% 18%;
+    --input: 200 20% 18%;
+    --ring: 175 52% 42%;
+
+    --sidebar-background: 200 28% 6%;
+    --sidebar-foreground: 175 20% 85%;
+    --sidebar-primary: 42 60% 52%;
+    --sidebar-primary-foreground: 0 0% 10%;
+    --sidebar-accent: 200 25% 12%;
+    --sidebar-accent-foreground: 175 20% 85%;
+    --sidebar-border: 200 20% 12%;
+    --sidebar-ring: 42 60% 52%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html, body, #root {
+    @apply h-full;
+  }
+  body {
+    @apply bg-background text-foreground font-inter antialiased;
+  }
+  h1, h2, h3 {
+    @apply font-playfair;
+  }
+}
