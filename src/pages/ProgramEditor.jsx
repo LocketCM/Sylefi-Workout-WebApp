@@ -112,20 +112,26 @@ export default function ProgramEditor() {
   }
 
   // ---- Exercise-level helpers ----------------------------------------------
-  function addExerciseToWorkout(wid, libExercise) {
+  // Accepts a single library exercise OR an array, so the picker can batch-add.
+  function addExerciseToWorkout(wid, libExerciseOrArray) {
+    const additions = Array.isArray(libExerciseOrArray) ? libExerciseOrArray : [libExerciseOrArray];
+    if (additions.length === 0) { setPickerFor(null); return; }
     setWorkouts((ws) => ws.map((w) => w.id === wid ? {
       ...w,
-      exercises: [...w.exercises, {
-        id: rid(),
-        exercise_id: libExercise.id,
-        name:        libExercise.name,
-        video_url:   libExercise.video_url ?? null,
-        // Seed with the library defaults. Coach can override below.
-        sets:   libExercise.default_sets   ?? null,
-        reps:   libExercise.default_reps   ?? null,
-        weight: libExercise.default_weight ?? null,
-        coach_note: '',
-      }],
+      exercises: [
+        ...w.exercises,
+        ...additions.map((libExercise) => ({
+          id: rid(),
+          exercise_id: libExercise.id,
+          name:        libExercise.name,
+          video_url:   libExercise.video_url ?? null,
+          // Seed with the library defaults. Coach can override below.
+          sets:   libExercise.default_sets   ?? null,
+          reps:   libExercise.default_reps   ?? null,
+          weight: libExercise.default_weight ?? null,
+          coach_note: '',
+        })),
+      ],
     } : w));
     setPickerFor(null);
   }
@@ -765,10 +771,14 @@ function NumField({ label, value, onChange, step = '1' }) {
 }
 
 // ---------------------------------------------------------------------------
-// ExercisePicker — modal to add an exercise from the library into a workout
+// ExercisePicker — modal to add one OR multiple exercises from the library
+// into a workout. Tap to toggle selection, then "Add N" to commit them all.
+// Order is preserved by selection order (first tapped → first added).
 // ---------------------------------------------------------------------------
 function ExercisePicker({ library, onClose, onPick }) {
-  const [q, setQ] = useState('');
+  const [q, setQ]               = useState('');
+  const [selectedIds, setSelectedIds] = useState([]); // ordered array of library ids
+
   const filtered = useMemo(() => {
     if (!q.trim()) return library;
     const needle = q.toLowerCase();
@@ -777,18 +787,44 @@ function ExercisePicker({ library, onClose, onPick }) {
     );
   }, [library, q]);
 
+  function toggle(ex) {
+    setSelectedIds((curr) =>
+      curr.includes(ex.id) ? curr.filter((id) => id !== ex.id) : [...curr, ex.id]
+    );
+  }
+
+  function commit() {
+    if (selectedIds.length === 0) return;
+    const byId = Object.fromEntries(library.map((e) => [e.id, e]));
+    // Preserve selection order so the workout reflects what Meg tapped first.
+    const exercises = selectedIds.map((id) => byId[id]).filter(Boolean);
+    onPick(exercises);
+  }
+
+  // Quick keyboard shortcut: Enter commits.
+  function onKeyDown(e) {
+    if (e.key === 'Enter' && selectedIds.length > 0) {
+      e.preventDefault();
+      commit();
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className="bg-card border border-border rounded-2xl w-full max-w-lg p-4 shadow-xl animate-fade-in max-h-[80vh] flex flex-col"
+        className="bg-card border border-border rounded-2xl w-full max-w-lg p-4 shadow-xl animate-fade-in max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={onKeyDown}
       >
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-playfair font-semibold text-lg">Add Exercise</h2>
-          <button onClick={onClose} className="p-1 rounded hover:bg-secondary">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-playfair font-semibold text-lg">Add Exercises</h2>
+          <button onClick={onClose} className="p-1 rounded hover:bg-secondary" aria-label="Close">
             <X size={18} />
           </button>
         </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          Tap to select multiple, then tap <span className="font-medium text-foreground">Add</span>.
+        </p>
 
         <div className="relative mb-3">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -805,24 +841,73 @@ function ExercisePicker({ library, onClose, onPick }) {
         <div className="flex-1 overflow-y-auto -mx-1 px-1 space-y-1">
           {filtered.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">No matches.</p>
-          ) : filtered.map((ex) => (
+          ) : filtered.map((ex) => {
+            const idx = selectedIds.indexOf(ex.id);
+            const isSelected = idx >= 0;
+            return (
+              <button
+                key={ex.id}
+                onClick={() => toggle(ex)}
+                className={`w-full text-left rounded-lg border p-3 transition flex items-center gap-3 ${
+                  isSelected
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border bg-background hover:border-primary/60'
+                }`}
+              >
+                {/* Selection chip — number shows order */}
+                <div className={`w-6 h-6 rounded-md flex-shrink-0 flex items-center justify-center text-[11px] font-semibold border ${
+                  isSelected
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'border-border text-muted-foreground bg-card'
+                }`}>
+                  {isSelected ? idx + 1 : ''}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm truncate">{ex.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {ex.category ?? 'Uncategorized'}
+                    {(ex.default_sets || ex.default_reps || ex.default_weight) && ' · '}
+                    {[
+                      ex.default_sets   && `${ex.default_sets} sets`,
+                      ex.default_reps   && `${ex.default_reps} reps`,
+                      ex.default_weight && `${ex.default_weight} lbs`,
+                    ].filter(Boolean).join(' × ')}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Sticky action bar */}
+        <div className="mt-3 pt-3 border-t border-border flex items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">
+            {selectedIds.length === 0
+              ? 'Nothing selected yet'
+              : `${selectedIds.length} selected`}
+          </p>
+          <div className="flex items-center gap-2">
+            {selectedIds.length > 0 && (
+              <button
+                onClick={() => setSelectedIds([])}
+                className="px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-secondary transition"
+              >
+                Clear
+              </button>
+            )}
             <button
-              key={ex.id}
-              onClick={() => onPick(ex)}
-              className="w-full text-left rounded-lg border border-border bg-background p-3 hover:border-primary/60 transition"
+              onClick={commit}
+              disabled={selectedIds.length === 0}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90 transition text-sm disabled:opacity-50"
             >
-              <p className="font-medium text-sm">{ex.name}</p>
-              <p className="text-xs text-muted-foreground">
-                {ex.category ?? 'Uncategorized'}
-                {(ex.default_sets || ex.default_reps || ex.default_weight) && ' · '}
-                {[
-                  ex.default_sets   && `${ex.default_sets} sets`,
-                  ex.default_reps   && `${ex.default_reps} reps`,
-                  ex.default_weight && `${ex.default_weight} lbs`,
-                ].filter(Boolean).join(' × ')}
-              </p>
+              <Plus size={15} />
+              {selectedIds.length === 0
+                ? 'Add'
+                : selectedIds.length === 1
+                  ? 'Add 1 exercise'
+                  : `Add ${selectedIds.length} exercises`}
             </button>
-          ))}
+          </div>
         </div>
       </div>
     </div>
