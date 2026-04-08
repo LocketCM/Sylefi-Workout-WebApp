@@ -22,6 +22,7 @@ export default function Clients() {
   const [reissued,   setReissued]       = useState(null); // client row w/ new code
   const [reissuing,  setReissuing]      = useState(null); // id being reissued
   const [signInFor,  setSignInFor]      = useState(null); // client row to show sign-in link for
+  const [editingClient, setEditingClient] = useState(null); // client row being edited
 
   useEffect(() => {
     load();
@@ -153,6 +154,7 @@ export default function Clients() {
               onDelete={() => deleteClient(c.id)}
               onReissue={() => reissueInvite(c)}
               onShowSignIn={() => setSignInFor(c)}
+              onEdit={() => setEditingClient(c)}
             />
           ))}
         </div>
@@ -161,6 +163,12 @@ export default function Clients() {
       {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} />}
       {reissued && <ReissueModal client={reissued} onClose={() => setReissued(null)} />}
       {signInFor && <SignInLinkModal client={signInFor} onClose={() => setSignInFor(null)} />}
+      {editingClient && (
+        <EditClientModal
+          client={editingClient}
+          onClose={() => setEditingClient(null)}
+        />
+      )}
     </div>
   );
 }
@@ -178,7 +186,7 @@ function StatusBadge({ status }) {
   );
 }
 
-function ClientRow({ client, busy, onDelete, onReissue, onShowSignIn }) {
+function ClientRow({ client, busy, onDelete, onReissue, onShowSignIn, onEdit }) {
   const name = client.display_name || `${client.first_name} ${client.last_name}`;
   const isActive = client.status === 'active';
   return (
@@ -195,6 +203,9 @@ function ClientRow({ client, busy, onDelete, onReissue, onShowSignIn }) {
           {client.email && (
             <p className="text-xs text-muted-foreground truncate">{client.email}</p>
           )}
+          {client.phone && (
+            <p className="text-xs text-muted-foreground truncate">{client.phone}</p>
+          )}
           {client.status === 'invited' && client.invite_code && (
             <p className="text-xs text-muted-foreground mt-0.5">
               Code: <span className="font-mono">{client.invite_code}</span>
@@ -203,6 +214,14 @@ function ClientRow({ client, busy, onDelete, onReissue, onShowSignIn }) {
         </div>
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
+        <button
+          onClick={onEdit}
+          className="p-2 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition"
+          aria-label="Edit client"
+          title="Edit client"
+        >
+          <Pencil size={16} />
+        </button>
         {isActive && client.access_code && (
           <button
             onClick={onShowSignIn}
@@ -408,6 +427,165 @@ function SignInLinkModal({ client, onClose }) {
             Treat it like a password — anyone with this link can sign in as {client.first_name}.
           </p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Edit a client's name, contact info, and notes. Coach-only — RLS already
+// allows admins to update any clients row. Validates that first/last name
+// stay non-empty so the rest of the app (which displays "first last")
+// doesn't break. Display name is the optional override Meg can use for
+// nicknames or organization (e.g. "Jane S. - Mondays").
+function EditClientModal({ client, onClose }) {
+  const [firstName,   setFirstName]   = useState(client.first_name ?? '');
+  const [lastName,    setLastName]    = useState(client.last_name ?? '');
+  const [displayName, setDisplayName] = useState(client.display_name ?? '');
+  const [email,       setEmail]       = useState(client.email ?? '');
+  const [phone,       setPhone]       = useState(client.phone ?? '');
+  const [notes,       setNotes]       = useState(client.notes ?? '');
+  const [saving,      setSaving]      = useState(false);
+  const [error,       setError]       = useState('');
+
+  async function save(e) {
+    e.preventDefault();
+    setError('');
+    if (!firstName.trim() || !lastName.trim()) {
+      setError('First and last name are required.');
+      return;
+    }
+    setSaving(true);
+    const { error: e2 } = await supabase
+      .from('clients')
+      .update({
+        first_name:   firstName.trim(),
+        last_name:    lastName.trim(),
+        display_name: displayName.trim() || null,
+        email:        email.trim() || null,
+        phone:        phone.trim() || null,
+        notes:        notes.trim() || null,
+      })
+      .eq('id', client.id);
+    setSaving(false);
+    if (e2) {
+      setError(e2.message);
+      return;
+    }
+    if (navigator.vibrate) navigator.vibrate(20);
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-card rounded-2xl border border-border max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border sticky top-0 bg-card">
+          <h2 className="font-playfair font-semibold">Edit Client</h2>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-md hover:bg-secondary transition"
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <form onSubmit={save} className="px-5 py-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">First name *</label>
+              <input
+                type="text"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Last name *</label>
+              <input
+                type="text"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">
+              Display name <span className="text-muted-foreground/70">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="What should they be called in the app?"
+              className="w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+            />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Overrides "First Last" in the client list. Leave blank to use their real name.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Phone</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">
+              Notes <span className="text-muted-foreground/70">(coach-only)</span>
+            </label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={4}
+              maxLength={1000}
+              placeholder="Goals, preferences, scheduling notes, emergency contact, anything you want to remember…"
+              className="w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring text-sm resize-none"
+            />
+            <p className="text-[11px] text-muted-foreground mt-1">{notes.length}/1000</p>
+          </div>
+
+          {error && (
+            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-destructive/10 text-destructive text-xs">
+              <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90 disabled:opacity-50 transition text-sm"
+            >
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2.5 rounded-lg border border-input bg-card hover:bg-secondary transition text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

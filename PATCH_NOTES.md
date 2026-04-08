@@ -16,10 +16,12 @@ Format: each entry is a date heading with bullet points grouped by **Coach**, **
 
 **Coach**
 - **New Settings page** in the sidebar. First setting: a global **welcome message** that shows on every client's dashboard. Supports `{first_name}` so you can write things like *"Welcome back, {first_name} 💪"* and each client sees their own name. Includes a live preview.
+- **Edit clients in place.** Each client row in the Clients page now has a ✏ pencil icon. Tap it to update their name, display name, email, phone, and a new **Notes** field for coach-only contact info, scheduling preferences, goals, emergency contacts — anything you want to remember. Phone now also shows on the client card under their email.
 - Meg now has a display name in Supabase ("Meg") so she's easy to spot in the user list.
 
 **Under the hood**
 - Added `clients.weight_unit` column (default `lbs`, check constraint allows `lbs`/`kg`) and a generic `app_settings` key/value table for future global settings, with RLS allowing reads to any signed-in user but writes only to the coach.
+- Added `clients.notes` column for the coach-only notes field.
 - Extracted weight formatting into a shared `src/lib/formatters.js` helper so WorkoutSession and WorkoutHistory can both apply the client's preferred unit.
 - Fixed pre-fill bug on the Join page where new clients' email/phone weren't pulled from the invite row.
 - Cleaned up a redundant default in the New Program mode picker.
