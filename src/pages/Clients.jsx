@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Search, Trash2, Copy, Check, X, RefreshCw, History, KeyRound } from 'lucide-react';
+import { Plus, Search, Trash2, Copy, Check, X, RefreshCw, History, KeyRound, Pencil, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { generateInviteCode, inviteExpiryISO, buildInviteUrl, buildSignInUrl } from '@/lib/inviteCode';
@@ -243,10 +243,16 @@ function ClientRow({ client, busy, onDelete, onReissue, onShowSignIn }) {
 }
 
 // Modal: shows the active client's permanent sign-in link so Meg can copy
-// it and send it to the client to bookmark.
+// it and send it to the client to bookmark. She can also customize the
+// code into something memorable (e.g. JANE-DOE-2026) or randomize it.
 function SignInLinkModal({ client, onClose }) {
-  const [copied, setCopied] = useState(false);
-  const url = buildSignInUrl(client.access_code);
+  const [copied, setCopied]   = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft]     = useState(client.access_code ?? '');
+  const [code, setCode]       = useState(client.access_code ?? '');
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState('');
+  const url = buildSignInUrl(code);
 
   async function copyLink() {
     const ok = await copyText(url);
@@ -254,6 +260,51 @@ function SignInLinkModal({ client, onClose }) {
     setCopied(true);
     if (navigator.vibrate) navigator.vibrate(20);
     setTimeout(() => setCopied(false), 1500);
+  }
+
+  // Validate + persist a new code. Allow A–Z, 0–9, dashes; 4–32 chars.
+  // Always uppercased for visual consistency.
+  async function saveCode() {
+    setError('');
+    const cleaned = (draft ?? '').trim().toUpperCase();
+    if (!/^[A-Z0-9-]{4,32}$/.test(cleaned)) {
+      setError('Use 4–32 characters. Letters, numbers, and dashes only.');
+      return;
+    }
+    if (cleaned === code) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    const { error: updErr } = await supabase
+      .from('clients')
+      .update({ access_code: cleaned })
+      .eq('id', client.id);
+    setSaving(false);
+    if (updErr) {
+      // Most common: unique-violation if another client already has this code.
+      setError(
+        updErr.message.includes('duplicate') || updErr.code === '23505'
+          ? 'That code is already in use by another client. Pick a different one.'
+          : updErr.message
+      );
+      return;
+    }
+    setCode(cleaned);
+    setEditing(false);
+    if (navigator.vibrate) navigator.vibrate(20);
+  }
+
+  // Generate a fresh random 12-char code into the draft field. Doesn't save
+  // until Meg hits Save — gives her a chance to back out.
+  function randomize() {
+    const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let out = '';
+    for (let i = 0; i < 12; i++) {
+      out += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
+    }
+    setDraft(out);
+    setError('');
   }
 
   return (
@@ -275,18 +326,81 @@ function SignInLinkModal({ client, onClose }) {
             It never expires and can be reused on any device. They should bookmark it
             (or "Add to Home Screen") so they can always get back to their dashboard.
           </p>
-          <div className="rounded-lg bg-secondary p-4 text-center">
-            <p className="text-xs text-muted-foreground mb-1">Personal sign-in code</p>
-            <p className="text-xl font-mono font-bold tracking-widest text-primary">
-              {client.access_code}
-            </p>
+
+          {/* Code display / editor */}
+          <div className="rounded-lg bg-secondary p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-muted-foreground">Personal sign-in code</p>
+              {!editing && (
+                <button
+                  onClick={() => { setDraft(code); setEditing(true); setError(''); }}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition"
+                >
+                  <Pencil size={12} /> Customize
+                </button>
+              )}
+            </div>
+
+            {!editing ? (
+              <p className="text-xl font-mono font-bold tracking-widest text-primary text-center">
+                {code}
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value.toUpperCase())}
+                  placeholder="JANE-DOE-2026"
+                  maxLength={32}
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  className="w-full px-3 py-2 rounded-lg border border-input bg-card text-center text-lg font-mono tracking-widest uppercase focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <p className="text-[11px] text-muted-foreground text-center">
+                  4–32 characters · letters, numbers, and dashes
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={randomize}
+                    disabled={saving}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card text-xs font-medium hover:bg-secondary transition disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} /> Randomize
+                  </button>
+                  <div className="flex-1" />
+                  <button
+                    onClick={() => { setEditing(false); setDraft(code); setError(''); }}
+                    disabled={saving}
+                    className="px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground hover:bg-card transition disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={saveCode}
+                    disabled={saving || !draft.trim()}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition disabled:opacity-50"
+                  >
+                    <Check size={12} /> {saving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+                {error && (
+                  <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-destructive/10 text-destructive text-xs">
+                    <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />
+                    <span>{error}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
+
           <div className="rounded-lg border border-border p-3 text-xs font-mono break-all bg-background">
             {url}
           </div>
           <button
             onClick={copyLink}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90"
+            disabled={editing}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90 disabled:opacity-50"
           >
             {copied ? <><Check size={16} /> Copied!</> : <><Copy size={16} /> Copy Sign-In Link</>}
           </button>
