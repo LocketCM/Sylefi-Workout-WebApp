@@ -7,6 +7,7 @@ import confetti from 'canvas-confetti';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { toDriveEmbedUrl, isDriveUrl } from '@/lib/driveVideo';
+import { formatWeight } from '@/lib/formatters';
 
 // Client-facing workout logger.
 //
@@ -297,6 +298,7 @@ export default function WorkoutSession() {
             key={log.id ?? i}
             log={log}
             index={i}
+            unit={client?.weight_unit ?? 'lbs'}
             onUpdate={(patch) => updateLog(i, patch)}
             onToggleComplete={() => toggleComplete(i)}
           />
@@ -341,7 +343,7 @@ export default function WorkoutSession() {
 // ---------------------------------------------------------------------------
 // ExerciseLogCard — one exercise to log
 // ---------------------------------------------------------------------------
-function ExerciseLogCard({ log, index, onUpdate, onToggleComplete }) {
+function ExerciseLogCard({ log, index, unit = 'lbs', onUpdate, onToggleComplete }) {
   const [showVideo, setShowVideo] = useState(false);
   const embedUrl = log.video_url ? toDriveEmbedUrl(log.video_url) : null;
   const driveLink = log.video_url && isDriveUrl(log.video_url) ? log.video_url : null;
@@ -372,7 +374,7 @@ function ExerciseLogCard({ log, index, onUpdate, onToggleComplete }) {
               Target: {[
                 log.target_sets   && `${log.target_sets} sets`,
                 log.target_reps   && `${log.target_reps} reps`,
-                log.target_weight && formatWeight(log.target_weight),
+                log.target_weight && formatWeight(log.target_weight, unit),
               ].filter(Boolean).join(' × ')}
             </p>
           )}
@@ -445,7 +447,7 @@ function ExerciseLogCard({ log, index, onUpdate, onToggleComplete }) {
           onChange={(v) => onUpdate({ reps_completed: v, _needsActuals: false })}
         />
         <TextField
-          label="Weight"
+          label={`Weight (${unit})`}
           value={log.weight_used}
           placeholder="e.g. 95 or BW"
           onChange={(v) => onUpdate({ weight_used: v })}
@@ -543,15 +545,6 @@ function mergeLogsWithProgram(existingLogs, programExercises) {
       target_weight: pe.weight ?? null,
     };
   });
-}
-
-// Render a weight value as "95 lbs" if it's numeric, or as-is if it's text
-// like "BW" or "Bodyweight". Used for both targets and actuals.
-function formatWeight(value) {
-  if (value === null || value === undefined || value === '') return '';
-  const n = Number(value);
-  if (Number.isFinite(n) && String(value).trim() !== '') return `${n} lbs`;
-  return String(value);
 }
 
 function fireConfetti() {

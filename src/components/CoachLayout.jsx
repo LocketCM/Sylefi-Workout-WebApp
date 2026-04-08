@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Dumbbell, ClipboardList, MessageSquare, Eye, Activity,
-  LogOut, Sun, Moon, Menu, X, ChevronRight,
+  LogOut, Sun, Moon, Menu, X, ChevronRight, Settings,
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { useCoachUnreadMessages, useCoachUnreadCompletions } from '@/lib/useUnreadMessages';
@@ -31,6 +31,7 @@ export default function CoachLayout() {
     { to: '/coach/activity',  icon: Activity,        label: 'Activity', badge: unreadCompletions },
     { to: '/coach/messages',  icon: MessageSquare,   label: 'Messages', badge: unreadMessages },
     { to: '/coach/view-as',   icon: Eye,             label: 'View as Client' },
+    { to: '/coach/settings',  icon: Settings,        label: 'Settings' },
   ];
 
   // Match exact for /coach, prefix for everything else.

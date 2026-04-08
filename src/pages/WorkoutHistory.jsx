@@ -3,6 +3,7 @@ import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { ArrowLeft, Check, Clock, ChevronDown, ChevronUp, MessageSquare } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { formatWeight } from '@/lib/formatters';
 
 // Workout history viewer.
 //
@@ -101,12 +102,12 @@ export default function WorkoutHistory() {
           <div className="space-y-6">
             {inProgress.length > 0 && (
               <Section title="In progress">
-                {inProgress.map((l) => <LogCard key={l.id} log={l} />)}
+                {inProgress.map((l) => <LogCard key={l.id} log={l} unit={client?.weight_unit ?? 'lbs'} />)}
               </Section>
             )}
             {completed.length > 0 && (
               <Section title="Completed">
-                {completed.map((l) => <LogCard key={l.id} log={l} />)}
+                {completed.map((l) => <LogCard key={l.id} log={l} unit={client?.weight_unit ?? 'lbs'} />)}
               </Section>
             )}
           </div>
@@ -128,7 +129,7 @@ function Section({ title, children }) {
 }
 
 // Each log expands to show the per-exercise breakdown.
-function LogCard({ log }) {
+function LogCard({ log, unit = 'lbs' }) {
   const [open, setOpen] = useState(false);
   const exLogs = Array.isArray(log.exercise_logs) ? log.exercise_logs : [];
   const doneCount = exLogs.filter((e) => e.completed).length;
@@ -161,7 +162,7 @@ function LogCard({ log }) {
           {exLogs.length === 0 ? (
             <p className="text-xs text-muted-foreground">No exercises logged.</p>
           ) : (
-            exLogs.map((e, i) => <ExerciseLogLine key={e.id ?? i} log={e} />)
+            exLogs.map((e, i) => <ExerciseLogLine key={e.id ?? i} log={e} unit={unit} />)
           )}
           {log.client_notes && (
             <div className="mt-3 px-3 py-2 rounded-lg bg-accent/5 border border-accent/20 flex gap-2">
@@ -175,23 +176,16 @@ function LogCard({ log }) {
   );
 }
 
-function formatWeight(value) {
-  if (value === null || value === undefined || value === '') return '';
-  const n = Number(value);
-  if (Number.isFinite(n) && String(value).trim() !== '') return `${n} lbs`;
-  return String(value);
-}
-
-function ExerciseLogLine({ log }) {
+function ExerciseLogLine({ log, unit = 'lbs' }) {
   const target = [
     log.target_sets   && `${log.target_sets} sets`,
     log.target_reps   && `${log.target_reps} reps`,
-    log.target_weight && formatWeight(log.target_weight),
+    log.target_weight && formatWeight(log.target_weight, unit),
   ].filter(Boolean).join(' × ');
   const actual = [
     log.sets_completed && `${log.sets_completed} sets`,
     log.reps_completed && `${log.reps_completed} reps`,
-    log.weight_used    && formatWeight(log.weight_used),
+    log.weight_used    && formatWeight(log.weight_used, unit),
   ].filter(Boolean).join(' × ');
 
   return (

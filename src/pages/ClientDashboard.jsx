@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { LogOut, Sun, Moon, Play, ChevronRight, Clock, MessageSquare, Check, History } from 'lucide-react';
+import { LogOut, Sun, Moon, Play, ChevronRight, Clock, MessageSquare, Check, History, Settings } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useClientUnreadMessages } from '@/lib/useUnreadMessages';
@@ -15,6 +15,7 @@ export default function ClientDashboard() {
   const [client, setClient]     = useState(null);
   const [program, setProgram]   = useState(null);
   const [logs, setLogs]         = useState([]); // workout_logs for this client+program
+  const [welcomeMsg, setWelcomeMsg] = useState('');
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
   const [dark, setDark]         = useState(() => localStorage.getItem('sw-theme') === 'dark');
@@ -48,6 +49,18 @@ export default function ClientDashboard() {
       .maybeSingle();
     if (cErr) { setError(cErr.message); setLoading(false); return; }
     setClient(c);
+
+    // Pull the global welcome message Meg set in Coach Settings. Don't block
+    // the page if it fails — just leave the banner empty.
+    supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'welcome_message')
+      .maybeSingle()
+      .then(({ data }) => {
+        const text = typeof data?.value === 'string' ? data.value : '';
+        setWelcomeMsg(text);
+      });
 
     if (c) {
       // Only fetch PUBLISHED programs — drafts are coach-only.
@@ -88,6 +101,13 @@ export default function ClientDashboard() {
   const workouts = Array.isArray(program?.workouts) ? program.workouts : [];
   const hasProgram = program && workouts.length > 0;
 
+  // Substitute {first_name} (case-insensitive) with the client's actual first
+  // name. If Meg leaves the message blank, the banner is hidden.
+  const welcomeText = (welcomeMsg || '').replace(
+    /\{first_name\}/gi,
+    client?.first_name ?? 'there',
+  );
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Top bar */}
@@ -111,6 +131,9 @@ export default function ClientDashboard() {
             <Link to="/client/history" className="p-2 rounded-lg hover:bg-secondary transition" aria-label="Workout history" title="Workout history">
               <History size={18} />
             </Link>
+            <Link to="/client/settings" className="p-2 rounded-lg hover:bg-secondary transition" aria-label="Settings" title="Settings">
+              <Settings size={18} />
+            </Link>
             <button onClick={() => setDark(!dark)} className="p-2 rounded-lg hover:bg-secondary transition" aria-label="Toggle theme">
               {dark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
@@ -124,6 +147,12 @@ export default function ClientDashboard() {
       <div className="max-w-2xl mx-auto p-4 space-y-4">
         {error && (
           <div className="px-4 py-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>
+        )}
+
+        {!loading && welcomeText && (
+          <div className="rounded-xl border border-accent/30 bg-accent/5 px-4 py-3">
+            <p className="text-sm text-foreground italic">{welcomeText}</p>
+          </div>
         )}
 
         {loading ? (

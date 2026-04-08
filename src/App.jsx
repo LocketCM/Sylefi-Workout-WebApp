@@ -14,6 +14,8 @@ import NewProgram from '@/pages/NewProgram';
 import ProgramEditor from '@/pages/ProgramEditor';
 import ComingSoon from '@/pages/ComingSoon';
 import ClientDashboard from '@/pages/ClientDashboard';
+import ClientSettings from '@/pages/ClientSettings';
+import CoachSettings from '@/pages/CoachSettings';
 import WorkoutSession from '@/pages/WorkoutSession';
 import WorkoutHistory from '@/pages/WorkoutHistory';
 import Activity from '@/pages/Activity';
@@ -50,6 +52,7 @@ export default function App() {
             <Route path="/coach/clients/:clientId/history" element={<WorkoutHistory />} />
             <Route path="/coach/messages"        element={<Messages />} />
             <Route path="/coach/activity"        element={<Activity />} />
+            <Route path="/coach/settings"        element={<CoachSettings />} />
             <Route path="/coach/view-as"             element={<ViewAsClient />} />
             <Route path="/coach/view-as/:clientId"   element={<ViewAsClient />} />
           </Route>
@@ -83,6 +86,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ClientMessages />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/client/settings"
+            element={
+              <ProtectedRoute>
+                <ClientSettings />
               </ProtectedRoute>
             }
           />
