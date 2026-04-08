@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { MessageSquare, Search } from 'lucide-react';
+import { MessageSquare, Search, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import MessageThread from '@/components/MessageThread';
 
@@ -18,6 +18,31 @@ export default function Messages() {
   const [search, setSearch]         = useState('');
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState('');
+  const [clearing, setClearing]     = useState(false);
+
+  // Wipe every message for the active client. Confirm twice in the prompt
+  // because there's no undo. Realtime subscription will refresh the panel.
+  async function clearActiveConversation() {
+    if (!activeClient) return;
+    const ok = window.confirm(
+      `Clear the entire conversation with ${activeClient.first_name}?\n\n` +
+      `This deletes every message between you and them. It cannot be undone.`
+    );
+    if (!ok) return;
+    setClearing(true);
+    const { error: rpcErr } = await supabase.rpc('clear_client_messages', {
+      p_client_id: activeClient.id,
+    });
+    setClearing(false);
+    if (rpcErr) {
+      setError(rpcErr.message);
+      return;
+    }
+    if (navigator.vibrate) navigator.vibrate(20);
+    // Realtime will reload, but force one immediately so the empty state
+    // shows even if the channel is slow.
+    load();
+  }
 
   useEffect(() => {
     load();
@@ -167,10 +192,19 @@ export default function Messages() {
                 <div className="w-9 h-9 rounded-full bg-primary/15 text-primary flex items-center justify-center font-medium">
                   {activeClient.first_name?.[0]?.toUpperCase() ?? '?'}
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="font-medium truncate">{activeClient.first_name} {activeClient.last_name}</p>
                   <p className="text-xs text-muted-foreground">Client</p>
                 </div>
+                <button
+                  onClick={clearActiveConversation}
+                  disabled={clearing}
+                  className="p-2 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition disabled:opacity-50"
+                  aria-label="Clear conversation"
+                  title="Clear conversation"
+                >
+                  <Trash2 size={16} />
+                </button>
               </div>
               <MessageThread
                 clientId={activeClient.id}
