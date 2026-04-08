@@ -176,22 +176,32 @@ export default function WorkoutSession() {
     if (value.trim()) ensureLogRow();
   }
   function toggleComplete(idx) {
-    setLogs((arr) => arr.map((l, i) => {
-      if (i !== idx) return l;
-      const next = !l.completed;
-      // When marking complete, if the client hasn't filled in actuals yet,
-      // pre-populate them from the prescribed targets so it's a one-tap log.
-      if (next) {
-        return {
-          ...l,
-          completed: true,
-          sets_completed: l.sets_completed ?? l.target_sets,
-          reps_completed: l.reps_completed ?? l.target_reps,
-          weight_used:    l.weight_used    ?? l.target_weight,
-        };
-      }
-      return { ...l, completed: false };
-    }));
+    const current = logs[idx];
+    if (!current) return;
+
+    // Unchecking is always allowed.
+    if (current.completed) {
+      setLogs((arr) => arr.map((l, i) => (i === idx ? { ...l, completed: false } : l)));
+      if (navigator.vibrate) navigator.vibrate(20);
+      ensureLogRow();
+      return;
+    }
+
+    // Marking complete: require sets + reps to be filled in by the client.
+    // Weight is intentionally optional (bodyweight movements). We *don't*
+    // auto-fill from target anymore — Meg wants to see what the client
+    // actually did, not assume they hit prescription.
+    const setsOk = current.sets_completed !== null && current.sets_completed !== '' && current.sets_completed !== undefined;
+    const repsOk = current.reps_completed !== null && current.reps_completed !== '' && current.reps_completed !== undefined;
+    if (!setsOk || !repsOk) {
+      setLogs((arr) => arr.map((l, i) => (i === idx ? { ...l, _needsActuals: true } : l)));
+      if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+      return;
+    }
+
+    setLogs((arr) => arr.map((l, i) =>
+      i === idx ? { ...l, completed: true, _needsActuals: false } : l
+    ));
     if (navigator.vibrate) navigator.vibrate(40);
     ensureLogRow();
   }
@@ -362,7 +372,7 @@ function ExerciseLogCard({ log, index, onUpdate, onToggleComplete }) {
               Target: {[
                 log.target_sets   && `${log.target_sets} sets`,
                 log.target_reps   && `${log.target_reps} reps`,
-                log.target_weight && `${log.target_weight} lbs`,
+                log.target_weight && formatWeight(log.target_weight),
               ].filter(Boolean).join(' × ')}
             </p>
           )}
@@ -423,22 +433,29 @@ function ExerciseLogCard({ log, index, onUpdate, onToggleComplete }) {
       {/* Actuals */}
       <div className="grid grid-cols-3 gap-2">
         <NumField
-          label="Sets"
+          label="Sets *"
           value={log.sets_completed}
-          onChange={(v) => onUpdate({ sets_completed: v })}
+          required={log._needsActuals}
+          onChange={(v) => onUpdate({ sets_completed: v, _needsActuals: false })}
         />
         <NumField
-          label="Reps"
+          label="Reps *"
           value={log.reps_completed}
-          onChange={(v) => onUpdate({ reps_completed: v })}
+          required={log._needsActuals}
+          onChange={(v) => onUpdate({ reps_completed: v, _needsActuals: false })}
         />
-        <NumField
+        <TextField
           label="Weight"
           value={log.weight_used}
+          placeholder="e.g. 95 or BW"
           onChange={(v) => onUpdate({ weight_used: v })}
-          step="0.5"
         />
       </div>
+      {log._needsActuals && (
+        <p className="text-xs text-destructive mt-2">
+          Enter your actual sets and reps before marking complete.
+        </p>
+      )}
 
       {/* Per-exercise client note */}
       <input
@@ -452,7 +469,7 @@ function ExerciseLogCard({ log, index, onUpdate, onToggleComplete }) {
   );
 }
 
-function NumField({ label, value, onChange, step = '1' }) {
+function NumField({ label, value, onChange, step = '1', required = false }) {
   return (
     <label className="block">
       <span className="block text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-0.5">{label}</span>
@@ -463,6 +480,23 @@ function NumField({ label, value, onChange, step = '1' }) {
         step={step}
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+        className={`w-full px-2 py-1.5 rounded-md border bg-background focus:outline-none focus:ring-2 focus:ring-ring text-sm ${
+          required ? 'border-destructive ring-1 ring-destructive/40' : 'border-input'
+        }`}
+      />
+    </label>
+  );
+}
+
+function TextField({ label, value, onChange, placeholder }) {
+  return (
+    <label className="block">
+      <span className="block text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-0.5">{label}</span>
+      <input
+        type="text"
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
+        placeholder={placeholder}
         className="w-full px-2 py-1.5 rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring text-sm"
       />
     </label>
@@ -509,6 +543,15 @@ function mergeLogsWithProgram(existingLogs, programExercises) {
       target_weight: pe.weight ?? null,
     };
   });
+}
+
+// Render a weight value as "95 lbs" if it's numeric, or as-is if it's text
+// like "BW" or "Bodyweight". Used for both targets and actuals.
+function formatWeight(value) {
+  if (value === null || value === undefined || value === '') return '';
+  const n = Number(value);
+  if (Number.isFinite(n) && String(value).trim() !== '') return `${n} lbs`;
+  return String(value);
 }
 
 function fireConfetti() {

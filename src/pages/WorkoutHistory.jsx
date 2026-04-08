@@ -175,16 +175,23 @@ function LogCard({ log }) {
   );
 }
 
+function formatWeight(value) {
+  if (value === null || value === undefined || value === '') return '';
+  const n = Number(value);
+  if (Number.isFinite(n) && String(value).trim() !== '') return `${n} lbs`;
+  return String(value);
+}
+
 function ExerciseLogLine({ log }) {
   const target = [
     log.target_sets   && `${log.target_sets} sets`,
     log.target_reps   && `${log.target_reps} reps`,
-    log.target_weight && `${log.target_weight} lbs`,
+    log.target_weight && formatWeight(log.target_weight),
   ].filter(Boolean).join(' × ');
   const actual = [
     log.sets_completed && `${log.sets_completed} sets`,
     log.reps_completed && `${log.reps_completed} reps`,
-    log.weight_used    && `${log.weight_used} lbs`,
+    log.weight_used    && formatWeight(log.weight_used),
   ].filter(Boolean).join(' × ');
 
   return (
