@@ -3,8 +3,8 @@ import { useAuth } from '@/lib/AuthContext';
 
 // Wraps a route to require login. Optionally requires the coach role.
 // Usage:
-//   <ProtectedRoute><CoachDashboard /></ProtectedRoute>
-//   <ProtectedRoute requireCoach><Clients /></ProtectedRoute>
+//   <ProtectedRoute><CoachDashboard /></ProtectedRoute>          → client area, sends to /signin
+//   <ProtectedRoute requireCoach><Clients /></ProtectedRoute>    → coach area, sends to /login
 export default function ProtectedRoute({ children, requireCoach = false }) {
   const { user, isCoach, loading } = useAuth();
 
@@ -16,7 +16,9 @@ export default function ProtectedRoute({ children, requireCoach = false }) {
     );
   }
 
-  if (!user) return <Navigate to="/login" replace />;
+  // Coach routes bounce to the coach login; client routes bounce to the
+  // returning-client sign-in page (where they enter their permanent code).
+  if (!user) return <Navigate to={requireCoach ? '/login' : '/signin'} replace />;
   if (requireCoach && !isCoach) return <Navigate to="/" replace />;
 
   return children;

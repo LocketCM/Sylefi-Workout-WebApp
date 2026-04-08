@@ -23,6 +23,18 @@ Meg will send you a **join link** and a **6-character code** (something like `AB
 
 ---
 
+## Your personal sign-in link
+
+After you join, your coach can give you a **permanent sign-in link** that looks like:
+
+`https://locketcm.github.io/Sylefi-Workout-WebApp/#/signin?code=AB12CD34EF56`
+
+This is different from the one-time invite code — it's your personal link that **never expires** and works on any device. **Bookmark it.** If you ever get signed out (new phone, cleared browser, etc.), you can always use this link to get straight back to your dashboard.
+
+Treat it like a password — anyone who has it can sign in as you.
+
+---
+
 ## Step 2 — Add the app to your phone (optional but recommended)
 
 This makes Sylefi feel like a real app instead of a website.
@@ -119,6 +131,9 @@ Either the code was typed wrong, the 7 days are up, or it was already used. Ask 
 
 **The app shows a white screen / won't load.**
 Close the browser tab and reopen the app. If it still doesn't work, try a different browser or text Meg.
+
+**I got signed out and the invite code doesn't work anymore.**
+Your one-time invite code only works once. Use your **personal sign-in link** instead (the long one with `signin?code=` in the URL) — that one never expires. If you don't have it, ask Meg to send it to you.
 
 **My workout progress disappeared.**
 It shouldn't — the app saves automatically every few seconds. If something looks wrong, screenshot it and send it to Meg.

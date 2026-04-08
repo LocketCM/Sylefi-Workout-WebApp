@@ -54,6 +54,20 @@ The sidebar (or hamburger menu on mobile) gets you everywhere else:
 
 Once they join, the client's status flips from **Invited** to **Active** automatically.
 
+### Personal sign-in link (for returning clients)
+
+Once a client is **Active**, they get a **permanent personal sign-in link** that never expires. This is what they should use to get back into the app — the original invite code is single-use only.
+
+To grab it:
+
+1. Go to **Clients**
+2. On any active client's row, tap the **🔑 key icon** (next to the history icon)
+3. Tap **Copy Sign-In Link** and send it to them
+
+Tell them to **bookmark it** or "Add to Home Screen" — that way they can always get back in, even if they get signed out, switch phones, or clear their browser.
+
+> Treat the link like a password — anyone with it can sign in as that client. If a client ever loses their device, the safest move is to use the **Re-send invite code** button (refresh icon) to issue a new invite, which will replace the old account binding.
+
 ---
 
 ## Building a program

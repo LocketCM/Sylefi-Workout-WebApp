@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Plus, Search, Trash2, Copy, Check, X, RefreshCw, History } from 'lucide-react';
+import { Plus, Search, Trash2, Copy, Check, X, RefreshCw, History, KeyRound } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { generateInviteCode, inviteExpiryISO, buildInviteUrl } from '@/lib/inviteCode';
+import { generateInviteCode, inviteExpiryISO, buildInviteUrl, buildSignInUrl } from '@/lib/inviteCode';
 import { copyText } from '@/lib/clipboard';
 
 const TABS = [
@@ -21,6 +21,7 @@ export default function Clients() {
   const [inviteOpen, setInviteOpen]     = useState(false);
   const [reissued,   setReissued]       = useState(null); // client row w/ new code
   const [reissuing,  setReissuing]      = useState(null); // id being reissued
+  const [signInFor,  setSignInFor]      = useState(null); // client row to show sign-in link for
 
   useEffect(() => {
     load();
@@ -151,6 +152,7 @@ export default function Clients() {
               busy={reissuing === c.id}
               onDelete={() => deleteClient(c.id)}
               onReissue={() => reissueInvite(c)}
+              onShowSignIn={() => setSignInFor(c)}
             />
           ))}
         </div>
@@ -158,6 +160,7 @@ export default function Clients() {
 
       {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} />}
       {reissued && <ReissueModal client={reissued} onClose={() => setReissued(null)} />}
+      {signInFor && <SignInLinkModal client={signInFor} onClose={() => setSignInFor(null)} />}
     </div>
   );
 }
@@ -175,8 +178,9 @@ function StatusBadge({ status }) {
   );
 }
 
-function ClientRow({ client, busy, onDelete, onReissue }) {
+function ClientRow({ client, busy, onDelete, onReissue, onShowSignIn }) {
   const name = client.display_name || `${client.first_name} ${client.last_name}`;
+  const isActive = client.status === 'active';
   return (
     <div className="rounded-xl bg-card border border-border p-4 flex items-center justify-between gap-4 hover:border-primary/50 transition">
       <div className="flex items-center gap-3 min-w-0">
@@ -199,6 +203,16 @@ function ClientRow({ client, busy, onDelete, onReissue }) {
         </div>
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
+        {isActive && client.access_code && (
+          <button
+            onClick={onShowSignIn}
+            className="p-2 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition"
+            aria-label="Sign-in link"
+            title="Personal sign-in link"
+          >
+            <KeyRound size={16} />
+          </button>
+        )}
         <Link
           to={`/coach/clients/${client.id}/history`}
           className="p-2 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition"
@@ -223,6 +237,63 @@ function ClientRow({ client, busy, onDelete, onReissue }) {
         >
           <Trash2 size={16} />
         </button>
+      </div>
+    </div>
+  );
+}
+
+// Modal: shows the active client's permanent sign-in link so Meg can copy
+// it and send it to the client to bookmark.
+function SignInLinkModal({ client, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const url = buildSignInUrl(client.access_code);
+
+  async function copyLink() {
+    const ok = await copyText(url);
+    if (!ok) { alert('Could not copy — please select the link above manually.'); return; }
+    setCopied(true);
+    if (navigator.vibrate) navigator.vibrate(20);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-card border border-border rounded-2xl w-full max-w-md p-6 shadow-xl animate-fade-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-playfair font-semibold text-xl">Personal Sign-In Link</h2>
+          <button onClick={onClose} className="p-1 rounded hover:bg-secondary">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            This is <strong className="text-foreground">{client.first_name}</strong>'s permanent sign-in link.
+            It never expires and can be reused on any device. They should bookmark it
+            (or "Add to Home Screen") so they can always get back to their dashboard.
+          </p>
+          <div className="rounded-lg bg-secondary p-4 text-center">
+            <p className="text-xs text-muted-foreground mb-1">Personal sign-in code</p>
+            <p className="text-xl font-mono font-bold tracking-widest text-primary">
+              {client.access_code}
+            </p>
+          </div>
+          <div className="rounded-lg border border-border p-3 text-xs font-mono break-all bg-background">
+            {url}
+          </div>
+          <button
+            onClick={copyLink}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90"
+          >
+            {copied ? <><Check size={16} /> Copied!</> : <><Copy size={16} /> Copy Sign-In Link</>}
+          </button>
+          <p className="text-[11px] text-muted-foreground text-center">
+            Treat it like a password — anyone with this link can sign in as {client.first_name}.
+          </p>
+        </div>
       </div>
     </div>
   );

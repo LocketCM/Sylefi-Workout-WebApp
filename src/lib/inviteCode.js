@@ -20,3 +20,9 @@ export function inviteExpiryISO(days = 7) {
 export function buildInviteUrl(code) {
   return `${window.location.origin}${window.location.pathname}#/join?code=${code}`;
 }
+
+// Build the permanent personal sign-in URL for an active client. Bookmarkable
+// — every visit re-binds them to their data, even on a new device.
+export function buildSignInUrl(accessCode) {
+  return `${window.location.origin}${window.location.pathname}#/signin?code=${accessCode}`;
+}

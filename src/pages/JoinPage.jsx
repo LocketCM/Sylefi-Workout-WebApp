@@ -146,6 +146,13 @@ export default function JoinPage() {
             >
               {busy ? 'Verifying…' : 'Verify Code'}
             </button>
+
+            <p className="text-center text-xs text-muted-foreground pt-2">
+              Returning client?{' '}
+              <Link to="/signin" className="text-primary hover:underline">
+                Sign in with your personal code
+              </Link>
+            </p>
           </form>
         )}
 

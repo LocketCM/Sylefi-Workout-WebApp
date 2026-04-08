@@ -5,6 +5,7 @@ import CoachLayout from '@/components/CoachLayout';
 import Landing from '@/pages/Landing';
 import Login from '@/pages/Login';
 import JoinPage from '@/pages/JoinPage';
+import ClientSignIn from '@/pages/ClientSignIn';
 import CoachDashboard from '@/pages/CoachDashboard';
 import Clients from '@/pages/Clients';
 import Exercises from '@/pages/Exercises';
@@ -29,7 +30,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
-          <Route path="/join" element={<JoinPage />} />
+          <Route path="/join"   element={<JoinPage />} />
+          <Route path="/signin" element={<ClientSignIn />} />
 
           {/* All coach pages share the sidebar shell + require admin role */}
           <Route
