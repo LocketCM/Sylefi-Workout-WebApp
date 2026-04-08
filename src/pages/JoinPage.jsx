@@ -21,8 +21,14 @@ export default function JoinPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  // Auto-verify if a code came in via URL.
+  // Auto-verify if a code came in via URL. If it's longer than 6 chars
+  // it's a returning-client sign-in code, not a first-time invite — bounce
+  // to /signin so the right flow handles it.
   useEffect(() => {
+    if (initialCode && initialCode.length > 6) {
+      navigate(`/signin?code=${encodeURIComponent(initialCode)}`, { replace: true });
+      return;
+    }
     if (initialCode && initialCode.length >= 4) {
       verifyCode(initialCode);
     }
@@ -36,6 +42,13 @@ export default function JoinPage() {
     if (trimmed.length < 4) {
       setBusy(false);
       setError('Please enter your full code.');
+      return;
+    }
+    // If they typed a longer code into the invite box, route them to the
+    // returning-client sign-in page where it actually belongs.
+    if (trimmed.length > 6) {
+      setBusy(false);
+      navigate(`/signin?code=${encodeURIComponent(trimmed)}`);
       return;
     }
 
@@ -128,7 +141,7 @@ export default function JoinPage() {
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               placeholder="ABC123"
-              maxLength={6}
+              maxLength={32}
               autoCapitalize="characters"
               autoCorrect="off"
               className="w-full px-4 py-3 rounded-lg border border-input bg-card text-center text-2xl font-mono tracking-widest uppercase focus:outline-none focus:ring-2 focus:ring-ring"

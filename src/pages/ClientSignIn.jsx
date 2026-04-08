@@ -103,7 +103,7 @@ export default function ClientSignIn() {
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               placeholder="AB12CD34EF56"
-              maxLength={12}
+              maxLength={32}
               autoCapitalize="characters"
               autoCorrect="off"
               className="w-full px-4 py-3 rounded-lg border border-input bg-card text-center text-lg font-mono tracking-widest uppercase focus:outline-none focus:ring-2 focus:ring-ring"
