@@ -17,7 +17,7 @@ export default function NewProgram() {
   const presetClient = params.get('client') ?? '';
 
   const [clients, setClients]   = useState([]);
-  const [mode, setMode]         = useState(presetClient ? 'client' : 'client');
+  const [mode, setMode]         = useState('client');
   const [clientId, setClientId] = useState(presetClient);
   const [title, setTitle]       = useState('');
   const [busy, setBusy]         = useState(false);

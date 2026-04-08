@@ -82,8 +82,8 @@ export default function JoinPage() {
     }
 
     setClient(row);
-    setEmail(data.email ?? '');
-    setPhone(data.phone ?? '');
+    setEmail(row.email ?? '');
+    setPhone(row.phone ?? '');
     setStep('profile');
     setBusy(false);
     if (navigator.vibrate) navigator.vibrate(30);
