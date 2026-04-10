@@ -6,10 +6,11 @@ import { generateInviteCode, inviteExpiryISO, buildInviteUrl, buildSignInUrl } f
 import { copyText } from '@/lib/clipboard';
 
 const TABS = [
-  { key: 'all',      label: 'All' },
-  { key: 'active',   label: 'Active' },
-  { key: 'invited',  label: 'Invited' },
-  { key: 'inactive', label: 'Inactive' },
+  { key: 'all',       label: 'All' },
+  { key: 'active',    label: 'Active' },
+  { key: 'invited',   label: 'Invited' },
+  { key: 'inactive',  label: 'Inactive' },
+  { key: 'in_person', label: 'In-Person' },
 ];
 
 export default function Clients() {
@@ -77,7 +78,13 @@ export default function Clients() {
   }
 
   const filtered = clients.filter((c) => {
-    if (tab !== 'all' && c.status !== tab) return false;
+    // "In-Person" is a cross-cutting filter — shows anyone Meg has marked
+    // as trains_in_person, regardless of status.
+    if (tab === 'in_person') {
+      if (!c.trains_in_person) return false;
+    } else if (tab !== 'all' && c.status !== tab) {
+      return false;
+    }
     if (search) {
       const q = search.toLowerCase();
       const hay = `${c.first_name} ${c.last_name} ${c.email ?? ''}`.toLowerCase();
@@ -142,7 +149,9 @@ export default function Clients() {
           <p className="text-sm text-muted-foreground">
             {clients.length === 0
               ? 'No clients yet. Click "Invite Client" to get started.'
-              : 'No clients match this filter.'}
+              : tab === 'in_person'
+                ? 'No in-person clients yet. Open a client\'s Edit modal and flip the "I also train this client in person" toggle to add them here.'
+                : 'No clients match this filter.'}
           </p>
         </div>
       ) : (
@@ -204,9 +213,17 @@ function ClientRow({ client, busy, onDelete, onReissue, onShowSignIn, onEdit, on
           {(client.first_name?.[0] ?? '?').toUpperCase()}
         </div>
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium truncate">{name}</p>
             <StatusBadge status={client.status} />
+            {client.trains_in_person && (
+              <span
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent/15 text-accent text-[10px] font-medium uppercase tracking-wide"
+                title="Meg trains this client in person"
+              >
+                <Dumbbell size={10} /> In-Person
+              </span>
+            )}
           </div>
           {client.email && (
             <p className="text-xs text-muted-foreground truncate">{client.email}</p>
@@ -456,14 +473,15 @@ function SignInLinkModal({ client, onClose }) {
 // doesn't break. Display name is the optional override Meg can use for
 // nicknames or organization (e.g. "Jane S. - Mondays").
 function EditClientModal({ client, onClose }) {
-  const [firstName,   setFirstName]   = useState(client.first_name ?? '');
-  const [lastName,    setLastName]    = useState(client.last_name ?? '');
-  const [displayName, setDisplayName] = useState(client.display_name ?? '');
-  const [email,       setEmail]       = useState(client.email ?? '');
-  const [phone,       setPhone]       = useState(client.phone ?? '');
-  const [notes,       setNotes]       = useState(client.notes ?? '');
-  const [saving,      setSaving]      = useState(false);
-  const [error,       setError]       = useState('');
+  const [firstName,      setFirstName]      = useState(client.first_name ?? '');
+  const [lastName,       setLastName]       = useState(client.last_name ?? '');
+  const [displayName,    setDisplayName]    = useState(client.display_name ?? '');
+  const [email,          setEmail]          = useState(client.email ?? '');
+  const [phone,          setPhone]          = useState(client.phone ?? '');
+  const [notes,          setNotes]          = useState(client.notes ?? '');
+  const [trainsInPerson, setTrainsInPerson] = useState(!!client.trains_in_person);
+  const [saving,         setSaving]         = useState(false);
+  const [error,          setError]          = useState('');
 
   async function save(e) {
     e.preventDefault();
@@ -476,12 +494,13 @@ function EditClientModal({ client, onClose }) {
     const { error: e2 } = await supabase
       .from('clients')
       .update({
-        first_name:   firstName.trim(),
-        last_name:    lastName.trim(),
-        display_name: displayName.trim() || null,
-        email:        email.trim() || null,
-        phone:        phone.trim() || null,
-        notes:        notes.trim() || null,
+        first_name:       firstName.trim(),
+        last_name:        lastName.trim(),
+        display_name:     displayName.trim() || null,
+        email:            email.trim() || null,
+        phone:            phone.trim() || null,
+        notes:            notes.trim() || null,
+        trains_in_person: trainsInPerson,
       })
       .eq('id', client.id);
     setSaving(false);
@@ -563,6 +582,32 @@ function EditClientModal({ client, onClose }) {
               onChange={(e) => setPhone(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring text-sm"
             />
+          </div>
+
+          <div>
+            <button
+              type="button"
+              onClick={() => setTrainsInPerson((v) => !v)}
+              className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border transition ${
+                trainsInPerson
+                  ? 'border-primary bg-primary/5'
+                  : 'border-input bg-background hover:bg-secondary'
+              }`}
+              aria-pressed={trainsInPerson}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Dumbbell size={14} className={trainsInPerson ? 'text-primary' : 'text-muted-foreground'} />
+                <div className="text-left min-w-0">
+                  <p className="text-sm font-medium">I also train this client in person</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Adds them to the In-Person tab for quick studio lookups.
+                  </p>
+                </div>
+              </div>
+              <div className={`relative flex-shrink-0 w-9 h-5 rounded-full transition ${trainsInPerson ? 'bg-primary' : 'bg-border'}`}>
+                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-card shadow transition ${trainsInPerson ? 'left-[18px]' : 'left-0.5'}`} />
+              </div>
+            </button>
           </div>
 
           <div>
