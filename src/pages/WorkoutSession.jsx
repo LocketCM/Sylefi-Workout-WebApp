@@ -343,7 +343,10 @@ export default function WorkoutSession() {
 // ---------------------------------------------------------------------------
 // ExerciseLogCard — one exercise to log
 // ---------------------------------------------------------------------------
-function ExerciseLogCard({ log, index, unit = 'lbs', onUpdate, onToggleComplete }) {
+// Exported so the coach's in-person logging page (CoachLogWorkout) can reuse
+// the exact same row rendering without duplicating UI. The component is pure
+// — it doesn't care who's driving it.
+export function ExerciseLogCard({ log, index, unit = 'lbs', onUpdate, onToggleComplete }) {
   const [showVideo, setShowVideo] = useState(false);
   const embedUrl = log.video_url ? toDriveEmbedUrl(log.video_url) : null;
   const driveLink = log.video_url && isDriveUrl(log.video_url) ? log.video_url : null;
@@ -508,7 +511,9 @@ function TextField({ label, value, onChange, placeholder }) {
 // ---------------------------------------------------------------------------
 // Helpers (pure)
 // ---------------------------------------------------------------------------
-function freshLogEntry(programExercise) {
+// Exported alongside ExerciseLogCard so the coach-driven version of this flow
+// can seed/merge exercise_logs without duplicating the logic.
+export function freshLogEntry(programExercise) {
   return {
     id:             programExercise.id,
     exercise_id:    programExercise.exercise_id ?? null,
@@ -529,7 +534,7 @@ function freshLogEntry(programExercise) {
 // If Meg edited the program after the client started a log, fold any new
 // exercises in (and refresh the snapshotted target/coach_note/video) without
 // throwing away what they've already entered.
-function mergeLogsWithProgram(existingLogs, programExercises) {
+export function mergeLogsWithProgram(existingLogs, programExercises) {
   const byId = new Map(existingLogs.map((l) => [l.id, l]));
   return programExercises.map((pe) => {
     const prev = byId.get(pe.id);
@@ -547,7 +552,7 @@ function mergeLogsWithProgram(existingLogs, programExercises) {
   });
 }
 
-function fireConfetti() {
+export function fireConfetti() {
   const colors = ['#0d9488', '#14b8a6', '#fbbf24', '#ffffff'];
   // Two bursts from the bottom corners — feels celebratory without being obnoxious.
   confetti({ particleCount: 80, spread: 70, origin: { x: 0.2, y: 0.9 }, colors });

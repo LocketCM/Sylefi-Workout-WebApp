@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Plus, Search, Trash2, Copy, Check, X, RefreshCw, History, KeyRound, Pencil, AlertCircle } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Plus, Search, Trash2, Copy, Check, X, RefreshCw, History, KeyRound, Pencil, AlertCircle, Dumbbell } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { generateInviteCode, inviteExpiryISO, buildInviteUrl, buildSignInUrl } from '@/lib/inviteCode';
 import { copyText } from '@/lib/clipboard';
@@ -23,6 +23,7 @@ export default function Clients() {
   const [reissuing,  setReissuing]      = useState(null); // id being reissued
   const [signInFor,  setSignInFor]      = useState(null); // client row to show sign-in link for
   const [editingClient, setEditingClient] = useState(null); // client row being edited
+  const [logForClient, setLogForClient]   = useState(null); // client row to pick a workout for
 
   useEffect(() => {
     load();
@@ -155,6 +156,7 @@ export default function Clients() {
               onReissue={() => reissueInvite(c)}
               onShowSignIn={() => setSignInFor(c)}
               onEdit={() => setEditingClient(c)}
+              onLogWorkout={() => setLogForClient(c)}
             />
           ))}
         </div>
@@ -167,6 +169,12 @@ export default function Clients() {
         <EditClientModal
           client={editingClient}
           onClose={() => setEditingClient(null)}
+        />
+      )}
+      {logForClient && (
+        <LogWorkoutPickerModal
+          client={logForClient}
+          onClose={() => setLogForClient(null)}
         />
       )}
     </div>
@@ -186,7 +194,7 @@ function StatusBadge({ status }) {
   );
 }
 
-function ClientRow({ client, busy, onDelete, onReissue, onShowSignIn, onEdit }) {
+function ClientRow({ client, busy, onDelete, onReissue, onShowSignIn, onEdit, onLogWorkout }) {
   const name = client.display_name || `${client.first_name} ${client.last_name}`;
   const isActive = client.status === 'active';
   return (
@@ -222,6 +230,16 @@ function ClientRow({ client, busy, onDelete, onReissue, onShowSignIn, onEdit }) 
         >
           <Pencil size={16} />
         </button>
+        {isActive && (
+          <button
+            onClick={onLogWorkout}
+            className="p-2 rounded-lg text-muted-foreground hover:bg-primary/10 hover:text-primary transition"
+            aria-label="Log in-person workout"
+            title="Log in-person workout"
+          >
+            <Dumbbell size={16} />
+          </button>
+        )}
         {isActive && client.access_code && (
           <button
             onClick={onShowSignIn}
@@ -773,6 +791,103 @@ function InviteModal({ onClose }) {
             >
               Done
             </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Picker shown when Meg taps the dumbbell icon on an active client. Loads
+// the client's current active program and lists the workouts in it so she
+// can pick which one she just trained them on. Tapping a workout routes
+// into CoachLogWorkout. If the client has no active program we tell her
+// plainly — she'd need to assign one before logging a session.
+function LogWorkoutPickerModal({ client, onClose }) {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState('');
+  const [program, setProgram] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const { data, error: e } = await supabase
+        .from('programs')
+        .select('id, title, workouts')
+        .eq('client_id', client.id)
+        .eq('status', 'active')
+        .maybeSingle();
+      if (e) { setError(e.message); setLoading(false); return; }
+      setProgram(data);
+      setLoading(false);
+    })();
+  }, [client.id]);
+
+  function pick(workoutId) {
+    onClose();
+    navigate(`/coach/clients/${client.id}/log/${workoutId}`);
+  }
+
+  const workouts = Array.isArray(program?.workouts) ? program.workouts : [];
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-card border border-border rounded-2xl w-full max-w-md p-6 shadow-xl animate-fade-in max-h-[85vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-playfair font-semibold text-xl">Log In-Person Workout</h2>
+          <button onClick={onClose} className="p-1 rounded hover:bg-secondary">
+            <X size={18} />
+          </button>
+        </div>
+
+        <p className="text-sm text-muted-foreground mb-4">
+          Pick which workout from{' '}
+          <strong className="text-foreground">{client.first_name}</strong>'s program you just ran.
+          You'll fill in the sets, reps, and weights they actually did — it saves to their
+          history marked as logged by you.
+        </p>
+
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Loading program…</p>
+        ) : error ? (
+          <div className="px-3 py-2 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>
+        ) : !program ? (
+          <div className="rounded-lg border border-dashed border-border p-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              {client.first_name} doesn't have an active program yet. Assign or build one
+              first, then come back here.
+            </p>
+          </div>
+        ) : workouts.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border p-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              This program has no workouts yet.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-1">
+              {program.title || 'Active program'}
+            </p>
+            {workouts.map((w) => (
+              <button
+                key={w.id}
+                onClick={() => pick(w.id)}
+                className="w-full text-left p-3 rounded-lg border border-border bg-background hover:border-primary hover:bg-primary/5 transition flex items-center gap-3"
+              >
+                <Dumbbell size={16} className="text-primary flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">{w.title || 'Untitled workout'}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {(w.exercises?.length ?? 0)} exercise{(w.exercises?.length ?? 0) === 1 ? '' : 's'}
+                  </p>
+                </div>
+              </button>
+            ))}
           </div>
         )}
       </div>

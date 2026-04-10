@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
-import { ArrowLeft, Check, Clock, ChevronDown, ChevronUp, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Check, Clock, ChevronDown, ChevronUp, MessageSquare, Dumbbell } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { formatWeight } from '@/lib/formatters';
@@ -149,7 +149,17 @@ function LogCard({ log, unit = 'lbs' }) {
           {log.workout_completed ? <Check size={18} strokeWidth={3} /> : <Clock size={16} />}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-medium truncate">{log.workout_title || 'Workout'}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-medium truncate">{log.workout_title || 'Workout'}</p>
+            {log.logged_by_coach && (
+              <span
+                className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-accent/15 text-accent text-[10px] font-medium uppercase tracking-wide"
+                title="This session was logged by Meg after an in-person training"
+              >
+                <Dumbbell size={10} /> In-person
+              </span>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
             {dateStr} · {doneCount} of {exLogs.length} exercise{exLogs.length === 1 ? '' : 's'}
           </p>
