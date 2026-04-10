@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Users, Dumbbell, ClipboardList, MessageSquare, Eye, Activity,
+  LayoutDashboard, Users, Dumbbell, BookOpen, ClipboardList, MessageSquare, Eye, Activity,
   LogOut, Sun, Moon, Menu, X, ChevronRight, Settings,
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
@@ -26,8 +26,9 @@ export default function CoachLayout() {
   const nav = [
     { to: '/coach',           icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/coach/clients',   icon: Users,           label: 'Clients' },
+    { to: '/coach/in-person', icon: Dumbbell,        label: 'In-Person' },
     { to: '/coach/programs',  icon: ClipboardList,   label: 'Programs' },
-    { to: '/coach/exercises', icon: Dumbbell,        label: 'Exercise Library' },
+    { to: '/coach/exercises', icon: BookOpen,        label: 'Exercise Library' },
     { to: '/coach/activity',  icon: Activity,        label: 'Activity', badge: unreadCompletions },
     { to: '/coach/messages',  icon: MessageSquare,   label: 'Messages', badge: unreadMessages },
     { to: '/coach/view-as',   icon: Eye,             label: 'View as Client' },

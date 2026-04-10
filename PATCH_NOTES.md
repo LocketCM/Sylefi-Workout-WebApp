@@ -11,6 +11,8 @@ Format: each entry is a date heading with bullet points grouped by **Coach**, **
 **Coach**
 - **Log workouts for in-person clients.** When you train someone in the studio, tap the 🏋 dumbbell icon on their row in the Clients page, pick which workout you just ran, and fill in their sets, reps, and weights on their behalf. Saves to their history marked **"In-person"** so you can tell at a glance which sessions were live with you vs. self-reported. Also skips the Activity notification badge — no point pinging you about a workout you just entered yourself.
 - **Flag clients you also train in person.** In the Edit Client modal, a new toggle lets you mark anyone as someone you also see in the studio. Flagged clients get a small **In-Person** pill next to their name in the list, and a new **In-Person** tab at the top of the Clients page filters the list down to just those people — handy for planning the studio week.
+- **"In-Person" sidebar shortcut.** A new **In-Person** entry in the left nav takes you to a dedicated studio page: big tap-target cards, one per flagged client, with their phone number and a History link right on the card. Tap any card → straight into the workout picker → straight into logging. Perfect for back-to-back sessions where you don't have time to hunt through the full roster.
+- Renamed Exercise Library's sidebar icon to a book to free up the dumbbell icon for in-person training, which is now the primary meaning of 🏋 throughout the app.
 
 **Under the hood**
 - Fixed a *"function gen_random_bytes does not exist"* error that was blocking the Join flow. The access-code trigger now uses Postgres's built-in `gen_random_uuid()` instead of pgcrypto, so there's no extension-schema dependency.

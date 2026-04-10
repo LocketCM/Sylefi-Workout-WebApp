@@ -848,7 +848,10 @@ function InviteModal({ onClose }) {
 // can pick which one she just trained them on. Tapping a workout routes
 // into CoachLogWorkout. If the client has no active program we tell her
 // plainly — she'd need to assign one before logging a session.
-function LogWorkoutPickerModal({ client, onClose }) {
+//
+// Exported so the dedicated /coach/in-person page can reuse the exact same
+// picker without duplicating the UI or the empty-state copy.
+export function LogWorkoutPickerModal({ client, onClose }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');

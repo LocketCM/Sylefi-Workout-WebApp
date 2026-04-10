@@ -18,6 +18,7 @@ import ClientSettings from '@/pages/ClientSettings';
 import CoachSettings from '@/pages/CoachSettings';
 import WorkoutSession from '@/pages/WorkoutSession';
 import CoachLogWorkout from '@/pages/CoachLogWorkout';
+import InPersonTraining from '@/pages/InPersonTraining';
 import WorkoutHistory from '@/pages/WorkoutHistory';
 import Activity from '@/pages/Activity';
 import Messages from '@/pages/Messages';
@@ -46,6 +47,7 @@ export default function App() {
           >
             <Route path="/coach"                 element={<CoachDashboard />} />
             <Route path="/coach/clients"         element={<Clients />} />
+            <Route path="/coach/in-person"       element={<InPersonTraining />} />
             <Route path="/coach/programs"        element={<Programs />} />
             <Route path="/coach/programs/new"    element={<NewProgram />} />
             <Route path="/coach/programs/:id"    element={<ProgramEditor />} />
