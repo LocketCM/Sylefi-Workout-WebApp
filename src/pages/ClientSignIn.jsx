@@ -25,7 +25,7 @@ export default function ClientSignIn() {
   const [success, setSuccess] = useState(null); // {first_name} after success
 
   useEffect(() => {
-    if (initialCode && initialCode.length >= 8) {
+    if (initialCode && initialCode.length >= 1) {
       handleSignIn(initialCode);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -35,9 +35,9 @@ export default function ClientSignIn() {
     setBusy(true);
     setError('');
     const trimmed = (rawCode ?? code).trim().toUpperCase();
-    if (trimmed.length < 8) {
+    if (trimmed.length < 1) {
       setBusy(false);
-      setError('Please enter your full 12-character sign-in code.');
+      setError('Please enter your sign-in code.');
       return;
     }
 
@@ -93,8 +93,8 @@ export default function ClientSignIn() {
             <div className="rounded-lg bg-secondary/60 px-4 py-3 text-xs text-muted-foreground flex items-start gap-2">
               <KeyRound size={14} className="flex-shrink-0 mt-0.5" />
               <p>
-                Enter your personal 12-character sign-in code. This is the long
-                code your coach gave you — different from the one-time invite code.
+                Enter your personal sign-in code. This is the code your coach
+                gave you — different from the one-time invite code.
               </p>
             </div>
 
@@ -102,7 +102,7 @@ export default function ClientSignIn() {
               type="text"
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder="AB12CD34EF56"
+              placeholder="YOUR CODE"
               maxLength={32}
               autoCapitalize="characters"
               autoCorrect="off"
@@ -118,7 +118,7 @@ export default function ClientSignIn() {
 
             <button
               type="submit"
-              disabled={busy || code.length < 8}
+              disabled={busy || code.length < 1}
               className="w-full py-3 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90 disabled:opacity-50 transition"
             >
               {busy ? 'Signing in…' : 'Sign In'}
