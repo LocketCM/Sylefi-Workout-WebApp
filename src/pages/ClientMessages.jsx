@@ -36,6 +36,18 @@ export default function ClientMessages() {
         </div>
       </div>
 
+      {/* Welcome intro — always visible above the thread */}
+      <div className="px-4 pt-4 pb-2">
+        <div className="rounded-xl bg-primary/5 border border-primary/15 px-4 py-3">
+          <p className="text-sm font-medium text-foreground">
+            Hey{client?.first_name ? `, ${client.first_name}` : ''}! This is your direct line to Coach Meg.
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Have a question about your program, need to reschedule, or just want to check in? Send a message below and Meg will get back to you.
+          </p>
+        </div>
+      </div>
+
       {error && (
         <div className="m-4 px-4 py-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>
       )}
