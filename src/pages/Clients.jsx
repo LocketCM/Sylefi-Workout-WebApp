@@ -316,13 +316,13 @@ function SignInLinkModal({ client, onClose }) {
     setTimeout(() => setCopied(false), 1500);
   }
 
-  // Validate + persist a new code. Allow A–Z, 0–9, dashes; 4–32 chars.
-  // Always uppercased for visual consistency.
+  // Validate + persist a new code. Any non-empty string up to 32 chars.
+  // Uppercased for visual consistency + case-insensitive sign-in.
   async function saveCode() {
     setError('');
     const cleaned = (draft ?? '').trim().toUpperCase();
-    if (!/^[A-Z0-9-]{4,32}$/.test(cleaned)) {
-      setError('Use 4–32 characters. Letters, numbers, and dashes only.');
+    if (cleaned.length < 1 || cleaned.length > 32) {
+      setError('Code must be 1–32 characters.');
       return;
     }
     if (cleaned === code) {
