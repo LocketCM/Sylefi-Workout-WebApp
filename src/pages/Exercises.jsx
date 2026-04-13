@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Search, Pencil, Trash2, X, Dumbbell, Play, ExternalLink } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, X, Dumbbell, Play, ExternalLink, Timer } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toDriveEmbedUrl } from '@/lib/driveVideo';
 
@@ -139,10 +139,12 @@ function ExerciseCard({ exercise, onEdit, onDelete }) {
   const [showVideo, setShowVideo] = useState(false);
   const embedUrl = toDriveEmbedUrl(exercise.video_url);
 
+  const isTimed = exercise.exercise_type === 'timed';
   const defaults = [
-    exercise.default_sets   ? `${exercise.default_sets} sets`     : null,
-    exercise.default_reps   ? `${exercise.default_reps} reps`     : null,
-    exercise.default_weight ? `${exercise.default_weight} lbs`    : null,
+    exercise.default_sets     ? `${exercise.default_sets} sets`          : null,
+    !isTimed && exercise.default_reps ? `${exercise.default_reps} reps` : null,
+    isTimed && exercise.default_duration ? `${exercise.default_duration}s hold` : null,
+    exercise.default_weight   ? `${exercise.default_weight} lbs`         : null,
   ].filter(Boolean).join(' × ');
 
   return (
@@ -150,11 +152,18 @@ function ExerciseCard({ exercise, onEdit, onDelete }) {
       <div className="flex items-start justify-between gap-3 mb-2">
         <div className="min-w-0">
           <p className="font-medium truncate">{exercise.name}</p>
-          {exercise.category && (
-            <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/15 text-primary">
-              {exercise.category}
-            </span>
-          )}
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            {exercise.category && (
+              <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-primary/15 text-primary">
+                {exercise.category}
+              </span>
+            )}
+            {exercise.exercise_type === 'timed' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-accent/15 text-accent">
+                <Timer size={10} /> Timed
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex gap-1 flex-shrink-0">
           <button
@@ -220,15 +229,18 @@ function ExerciseCard({ exercise, onEdit, onDelete }) {
 
 function ExerciseModal({ exercise, onClose }) {
   const isEdit = Boolean(exercise.id);
-  const [name,   setName]   = useState(exercise.name   ?? '');
-  const [cat,    setCat]    = useState(exercise.category ?? 'Strength');
-  const [sets,   setSets]   = useState(exercise.default_sets   ?? '');
-  const [reps,   setReps]   = useState(exercise.default_reps   ?? '');
-  const [weight, setWeight] = useState(exercise.default_weight ?? '');
-  const [notes,  setNotes]  = useState(exercise.notes  ?? '');
-  const [video,  setVideo]  = useState(exercise.video_url ?? '');
-  const [busy,   setBusy]   = useState(false);
-  const [error,  setError]  = useState('');
+  const [name,     setName]     = useState(exercise.name   ?? '');
+  const [cat,      setCat]      = useState(exercise.category ?? 'Strength');
+  const [exType,   setExType]   = useState(exercise.exercise_type ?? 'reps');
+  const [sets,     setSets]     = useState(exercise.default_sets   ?? '');
+  const [reps,     setReps]     = useState(exercise.default_reps   ?? '');
+  const [duration, setDuration] = useState(exercise.default_duration ?? '');
+  const [weight,   setWeight]   = useState(exercise.default_weight ?? '');
+  const [notes,    setNotes]    = useState(exercise.notes  ?? '');
+  const [video,    setVideo]    = useState(exercise.video_url ?? '');
+  const [busy,     setBusy]     = useState(false);
+  const [error,    setError]    = useState('');
+  const isTimed = exType === 'timed';
 
   async function handleSave(e) {
     e.preventDefault();
@@ -237,13 +249,15 @@ function ExerciseModal({ exercise, onClose }) {
 
     // Empty number fields → null in DB so we don't store 0 as a default.
     const payload = {
-      name:           name.trim(),
-      category:       cat,
-      default_sets:   sets   === '' ? null : Number(sets),
-      default_reps:   reps   === '' ? null : Number(reps),
-      default_weight: weight === '' ? null : Number(weight),
-      notes:          notes.trim() || null,
-      video_url:      video.trim() || null,
+      name:             name.trim(),
+      category:         cat,
+      exercise_type:    exType,
+      default_sets:     sets     === '' ? null : Number(sets),
+      default_reps:     isTimed  ? null : (reps === '' ? null : Number(reps)),
+      default_duration: isTimed  ? (duration === '' ? null : Number(duration)) : null,
+      default_weight:   weight   === '' ? null : Number(weight),
+      notes:            notes.trim() || null,
+      video_url:        video.trim() || null,
     };
 
     const { error: saveErr } = isEdit
@@ -298,6 +312,27 @@ function ExerciseModal({ exercise, onClose }) {
             </select>
           </div>
 
+          {/* Exercise type toggle */}
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Type</label>
+            <div className="flex gap-1 bg-secondary rounded-lg p-1">
+              {[{ key: 'reps', label: 'Rep-Based' }, { key: 'timed', label: 'Timed Hold' }].map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setExType(t.key)}
+                  className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition ${
+                    exType === t.key
+                      ? 'bg-card text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Default Sets</label>
@@ -310,17 +345,31 @@ function ExerciseModal({ exercise, onClose }) {
                 className="w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Default Reps</label>
-              <input
-                type="number"
-                min="0"
-                value={reps}
-                onChange={(e) => setReps(e.target.value)}
-                placeholder="10"
-                className="w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
+            {isTimed ? (
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Duration (sec)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={duration}
+                  onChange={(e) => setDuration(e.target.value)}
+                  placeholder="45"
+                  className="w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Default Reps</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={reps}
+                  onChange={(e) => setReps(e.target.value)}
+                  placeholder="10"
+                  className="w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+            )}
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">Default Lbs</label>
               <input

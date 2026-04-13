@@ -187,14 +187,18 @@ function LogCard({ log, unit = 'lbs' }) {
 }
 
 function ExerciseLogLine({ log, unit = 'lbs' }) {
+  const isTimed = log.exercise_type === 'timed';
+  const fmtSec = (s) => { const n = Number(s); if (!n || n <= 0) return null; const m = Math.floor(n / 60); const sec = Math.floor(n % 60); return `${m}:${sec.toString().padStart(2, '0')}`; };
   const target = [
-    log.target_sets   && `${log.target_sets} sets`,
-    log.target_reps   && `${log.target_reps} reps`,
-    log.target_weight && formatWeight(log.target_weight, unit),
+    log.target_sets     && `${log.target_sets} sets`,
+    !isTimed && log.target_reps && `${log.target_reps} reps`,
+    isTimed && log.target_duration && `${fmtSec(log.target_duration)} hold`,
+    log.target_weight   && formatWeight(log.target_weight, unit),
   ].filter(Boolean).join(' × ');
   const actual = [
     log.sets_completed && `${log.sets_completed} sets`,
-    log.reps_completed && `${log.reps_completed} reps`,
+    !isTimed && log.reps_completed && `${log.reps_completed} reps`,
+    isTimed && log.duration_completed && `${log.duration_completed}`,
     log.weight_used    && formatWeight(log.weight_used, unit),
   ].filter(Boolean).join(' × ');
 

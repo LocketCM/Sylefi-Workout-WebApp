@@ -175,8 +175,9 @@ export default function CoachLogWorkout() {
       return;
     }
 
+    const isTimed = current.exercise_type === 'timed';
     const setsOk = current.sets_completed !== null && current.sets_completed !== '' && current.sets_completed !== undefined;
-    const repsOk = current.reps_completed !== null && current.reps_completed !== '' && current.reps_completed !== undefined;
+    const repsOk = isTimed || (current.reps_completed !== null && current.reps_completed !== '' && current.reps_completed !== undefined);
     if (!setsOk || !repsOk) {
       setLogs((arr) => arr.map((l, i) => (i === idx ? { ...l, _needsActuals: true } : l)));
       return;

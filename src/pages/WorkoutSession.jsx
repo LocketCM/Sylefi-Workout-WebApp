@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  ArrowLeft, Check, Play, ExternalLink, MessageSquare, ChevronDown, ChevronUp,
+  ArrowLeft, Check, Play, Pause, RotateCcw, ExternalLink, MessageSquare,
+  ChevronDown, ChevronUp, Timer,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAuth } from '@/lib/AuthContext';
@@ -188,12 +189,13 @@ export default function WorkoutSession() {
       return;
     }
 
-    // Marking complete: require sets + reps to be filled in by the client.
+    // Marking complete: require sets + reps (or sets-only for timed).
     // Weight is intentionally optional (bodyweight movements). We *don't*
     // auto-fill from target anymore — Meg wants to see what the client
     // actually did, not assume they hit prescription.
+    const isTimed = current.exercise_type === 'timed';
     const setsOk = current.sets_completed !== null && current.sets_completed !== '' && current.sets_completed !== undefined;
-    const repsOk = current.reps_completed !== null && current.reps_completed !== '' && current.reps_completed !== undefined;
+    const repsOk = isTimed || (current.reps_completed !== null && current.reps_completed !== '' && current.reps_completed !== undefined);
     if (!setsOk || !repsOk) {
       setLogs((arr) => arr.map((l, i) => (i === idx ? { ...l, _needsActuals: true } : l)));
       if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
@@ -350,6 +352,7 @@ export function ExerciseLogCard({ log, index, unit = 'lbs', onUpdate, onToggleCo
   const [showVideo, setShowVideo] = useState(false);
   const embedUrl = log.video_url ? toDriveEmbedUrl(log.video_url) : null;
   const driveLink = log.video_url && isDriveUrl(log.video_url) ? log.video_url : null;
+  const isTimed = log.exercise_type === 'timed';
 
   return (
     <div className={`rounded-xl border p-4 transition ${
@@ -369,15 +372,23 @@ export function ExerciseLogCard({ log, index, unit = 'lbs', onUpdate, onToggleCo
           {log.completed && <Check size={14} strokeWidth={3} />}
         </button>
         <div className="flex-1 min-w-0">
-          <p className={`font-medium ${log.completed ? 'line-through text-muted-foreground' : ''}`}>
-            {index + 1}. {log.name}
-          </p>
-          {(log.target_sets || log.target_reps || log.target_weight) && (
+          <div className="flex items-center gap-2">
+            <p className={`font-medium ${log.completed ? 'line-through text-muted-foreground' : ''}`}>
+              {index + 1}. {log.name}
+            </p>
+            {isTimed && (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-accent/15 text-accent text-[10px] font-medium">
+                <Timer size={9} /> Timed
+              </span>
+            )}
+          </div>
+          {(log.target_sets || log.target_reps || log.target_duration || log.target_weight) && (
             <p className="text-xs text-muted-foreground mt-0.5">
               Target: {[
-                log.target_sets   && `${log.target_sets} sets`,
-                log.target_reps   && `${log.target_reps} reps`,
-                log.target_weight && formatWeight(log.target_weight, unit),
+                log.target_sets     && `${log.target_sets} sets`,
+                !isTimed && log.target_reps && `${log.target_reps} reps`,
+                isTimed && log.target_duration && fmtSecs(log.target_duration) + ' hold',
+                log.target_weight   && formatWeight(log.target_weight, unit),
               ].filter(Boolean).join(' × ')}
             </p>
           )}
@@ -435,20 +446,39 @@ export function ExerciseLogCard({ log, index, unit = 'lbs', onUpdate, onToggleCo
         </div>
       )}
 
+      {/* Countdown timer for timed exercises */}
+      {isTimed && log.target_duration && (
+        <CountdownTimer
+          targetSeconds={log.target_duration}
+          onComplete={(actualSecs) =>
+            onUpdate({ duration_completed: actualSecs })
+          }
+        />
+      )}
+
       {/* Actuals */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className={`grid gap-2 ${isTimed ? 'grid-cols-2' : 'grid-cols-3'}`}>
         <NumField
           label="Sets *"
           value={log.sets_completed}
           required={log._needsActuals}
           onChange={(v) => onUpdate({ sets_completed: v, _needsActuals: false })}
         />
-        <NumField
-          label="Reps *"
-          value={log.reps_completed}
-          required={log._needsActuals}
-          onChange={(v) => onUpdate({ reps_completed: v, _needsActuals: false })}
-        />
+        {isTimed ? (
+          <TextField
+            label="Time held"
+            value={log.duration_completed}
+            placeholder={log.target_duration ? `${log.target_duration}s` : 'e.g. 45s'}
+            onChange={(v) => onUpdate({ duration_completed: v })}
+          />
+        ) : (
+          <NumField
+            label="Reps *"
+            value={log.reps_completed}
+            required={log._needsActuals}
+            onChange={(v) => onUpdate({ reps_completed: v, _needsActuals: false })}
+          />
+        )}
         <TextField
           label={`Weight (${unit})`}
           value={log.weight_used}
@@ -458,7 +488,9 @@ export function ExerciseLogCard({ log, index, unit = 'lbs', onUpdate, onToggleCo
       </div>
       {log._needsActuals && (
         <p className="text-xs text-destructive mt-2">
-          Enter your actual sets and reps before marking complete.
+          {isTimed
+            ? 'Enter your actual sets before marking complete.'
+            : 'Enter your actual sets and reps before marking complete.'}
         </p>
       )}
 
@@ -515,19 +547,22 @@ function TextField({ label, value, onChange, placeholder }) {
 // can seed/merge exercise_logs without duplicating the logic.
 export function freshLogEntry(programExercise) {
   return {
-    id:             programExercise.id,
-    exercise_id:    programExercise.exercise_id ?? null,
-    name:           programExercise.name,
-    video_url:      programExercise.video_url ?? null,
-    coach_note:     programExercise.coach_note ?? '',
-    target_sets:    programExercise.sets ?? null,
-    target_reps:    programExercise.reps ?? null,
-    target_weight:  programExercise.weight ?? null,
-    sets_completed: null,
-    reps_completed: null,
-    weight_used:    null,
-    completed:      false,
-    client_note:    '',
+    id:               programExercise.id,
+    exercise_id:      programExercise.exercise_id ?? null,
+    name:             programExercise.name,
+    video_url:        programExercise.video_url ?? null,
+    coach_note:       programExercise.coach_note ?? '',
+    exercise_type:    programExercise.exercise_type ?? 'reps',
+    target_sets:      programExercise.sets ?? null,
+    target_reps:      programExercise.reps ?? null,
+    target_duration:  programExercise.duration ?? null,
+    target_weight:    programExercise.weight ?? null,
+    sets_completed:   null,
+    reps_completed:   null,
+    duration_completed: null,
+    weight_used:      null,
+    completed:        false,
+    client_note:      '',
   };
 }
 
@@ -542,14 +577,149 @@ export function mergeLogsWithProgram(existingLogs, programExercises) {
     return {
       ...prev,
       // Refresh snapshots from program (coach may have updated targets)
-      name:          pe.name,
-      video_url:     pe.video_url ?? null,
-      coach_note:    pe.coach_note ?? '',
-      target_sets:   pe.sets ?? null,
-      target_reps:   pe.reps ?? null,
-      target_weight: pe.weight ?? null,
+      name:            pe.name,
+      video_url:       pe.video_url ?? null,
+      coach_note:      pe.coach_note ?? '',
+      exercise_type:   pe.exercise_type ?? 'reps',
+      target_sets:     pe.sets ?? null,
+      target_reps:     pe.reps ?? null,
+      target_duration: pe.duration ?? null,
+      target_weight:   pe.weight ?? null,
     };
   });
+}
+
+// Format seconds → "0:45", "1:30", etc.
+export function fmtSecs(s) {
+  const n = Number(s);
+  if (!n || n <= 0) return '0:00';
+  const m = Math.floor(n / 60);
+  const sec = Math.floor(n % 60);
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+// ---------------------------------------------------------------------------
+// CountdownTimer — a simple start/pause/reset countdown. Fires onComplete
+// when the clock hits zero. Independent of the data layer — ExerciseLogCard
+// decides what to do with the result.
+// ---------------------------------------------------------------------------
+function CountdownTimer({ targetSeconds, onComplete }) {
+  const [remaining, setRemaining] = useState(targetSeconds);
+  const [status, setStatus]       = useState('idle'); // idle | running | paused | done
+  const intervalRef = useRef(null);
+
+  function clear() { if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; } }
+
+  function start() {
+    if (status === 'done') {
+      // Reset first if we're restarting after completion
+      setRemaining(targetSeconds);
+    }
+    setStatus('running');
+    const startedAt = Date.now();
+    const startRemaining = status === 'done' ? targetSeconds : remaining;
+    clear();
+    intervalRef.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      const next = startRemaining - elapsed;
+      if (next <= 0) {
+        setRemaining(0);
+        setStatus('done');
+        clear();
+        if (navigator.vibrate) navigator.vibrate([100, 80, 100, 80, 200]);
+        onComplete?.(targetSeconds);
+      } else {
+        setRemaining(next);
+      }
+    }, 250); // check 4× per second for smooth display
+  }
+
+  function pause() {
+    setStatus('paused');
+    clear();
+  }
+
+  function reset() {
+    setStatus('idle');
+    setRemaining(targetSeconds);
+    clear();
+  }
+
+  // Cleanup on unmount
+  useEffect(() => () => clear(), []);
+
+  // If target changes (e.g. coach edits mid-session), reset
+  useEffect(() => {
+    if (status === 'idle') setRemaining(targetSeconds);
+  }, [targetSeconds]);
+
+  const pct = targetSeconds > 0 ? (remaining / targetSeconds) * 100 : 0;
+  const isDone = status === 'done';
+
+  return (
+    <div className={`rounded-lg border p-3 mb-2 text-center transition ${
+      isDone ? 'bg-primary/10 border-primary/40' : 'bg-secondary/50 border-border'
+    }`}>
+      {/* Circular-ish progress bar */}
+      <div className="relative w-20 h-20 mx-auto mb-2">
+        <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+          <circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" className="text-border" strokeWidth="2.5" />
+          <circle
+            cx="18" cy="18" r="15" fill="none" stroke="currentColor"
+            className={isDone ? 'text-primary' : 'text-accent'}
+            strokeWidth="2.5"
+            strokeDasharray={`${pct * 0.9425} 94.25`}
+            strokeLinecap="round"
+            style={{ transition: 'stroke-dasharray 0.3s ease' }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className={`font-mono text-lg font-bold ${isDone ? 'text-primary' : ''}`}>
+            {fmtSecs(remaining)}
+          </span>
+        </div>
+      </div>
+
+      {isDone && (
+        <p className="text-xs font-medium text-primary mb-2">Time's up!</p>
+      )}
+
+      <div className="flex items-center justify-center gap-2">
+        {(status === 'idle' || status === 'paused') && (
+          <button
+            onClick={start}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition"
+          >
+            <Play size={12} /> {status === 'paused' ? 'Resume' : 'Start'}
+          </button>
+        )}
+        {status === 'running' && (
+          <button
+            onClick={pause}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-accent-foreground text-xs font-medium hover:opacity-90 transition"
+          >
+            <Pause size={12} /> Pause
+          </button>
+        )}
+        {status === 'done' && (
+          <button
+            onClick={start}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition"
+          >
+            <Play size={12} /> Again
+          </button>
+        )}
+        {status !== 'idle' && (
+          <button
+            onClick={reset}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-muted-foreground text-xs font-medium hover:bg-secondary transition"
+          >
+            <RotateCcw size={12} /> Reset
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function fireConfetti() {

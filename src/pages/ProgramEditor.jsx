@@ -77,8 +77,10 @@ export default function ProgramEditor() {
           exercise_id: e.exercise_id ?? null,
           name: e.name ?? '',
           video_url: e.video_url ?? null,
+          exercise_type: e.exercise_type ?? 'reps',
           sets: e.sets ?? null,
           reps: e.reps ?? null,
+          duration: e.duration ?? null,
           weight: e.weight ?? null,
           coach_note: e.coach_note ?? '',
         })),
@@ -122,13 +124,15 @@ export default function ProgramEditor() {
         ...w.exercises,
         ...additions.map((libExercise) => ({
           id: rid(),
-          exercise_id: libExercise.id,
-          name:        libExercise.name,
-          video_url:   libExercise.video_url ?? null,
+          exercise_id:   libExercise.id,
+          name:          libExercise.name,
+          video_url:     libExercise.video_url ?? null,
+          exercise_type: libExercise.exercise_type ?? 'reps',
           // Seed with the library defaults. Coach can override below.
-          sets:   libExercise.default_sets   ?? null,
-          reps:   libExercise.default_reps   ?? null,
-          weight: libExercise.default_weight ?? null,
+          sets:     libExercise.default_sets     ?? null,
+          reps:     libExercise.default_reps     ?? null,
+          duration: libExercise.default_duration ?? null,
+          weight:   libExercise.default_weight   ?? null,
           coach_note: '',
         })),
       ],
@@ -214,9 +218,11 @@ export default function ProgramEditor() {
           exercise_id: e.exercise_id,
           name: e.name,
           video_url: e.video_url,
-          sets:   e.sets   === '' || e.sets   == null ? null : Number(e.sets),
-          reps:   e.reps   === '' || e.reps   == null ? null : Number(e.reps),
-          weight: e.weight === '' || e.weight == null ? null : Number(e.weight),
+          exercise_type: e.exercise_type ?? 'reps',
+          sets:     e.sets     === '' || e.sets     == null ? null : Number(e.sets),
+          reps:     e.reps     === '' || e.reps     == null ? null : Number(e.reps),
+          duration: e.duration === '' || e.duration == null ? null : Number(e.duration),
+          weight:   e.weight   === '' || e.weight   == null ? null : Number(e.weight),
           coach_note: (e.coach_note ?? '').trim(),
         })),
       })),
@@ -736,8 +742,12 @@ function ExerciseRow({ exercise, index, total, onUpdate, onRemove, onMove }) {
       </div>
 
       <div className="grid grid-cols-3 gap-2">
-        <NumField label="Sets"   value={exercise.sets}   onChange={(v) => onUpdate({ sets: v })} />
-        <NumField label="Reps"   value={exercise.reps}   onChange={(v) => onUpdate({ reps: v })} />
+        <NumField label="Sets" value={exercise.sets} onChange={(v) => onUpdate({ sets: v })} />
+        {exercise.exercise_type === 'timed' ? (
+          <NumField label="Duration (sec)" value={exercise.duration} onChange={(v) => onUpdate({ duration: v })} />
+        ) : (
+          <NumField label="Reps" value={exercise.reps} onChange={(v) => onUpdate({ reps: v })} />
+        )}
         <NumField label="Weight" value={exercise.weight} onChange={(v) => onUpdate({ weight: v })} step="0.5" />
       </div>
 
@@ -866,11 +876,13 @@ function ExercisePicker({ library, onClose, onPick }) {
                   <p className="font-medium text-sm truncate">{ex.name}</p>
                   <p className="text-xs text-muted-foreground truncate">
                     {ex.category ?? 'Uncategorized'}
-                    {(ex.default_sets || ex.default_reps || ex.default_weight) && ' · '}
+                    {ex.exercise_type === 'timed' && ' · Timed'}
+                    {(ex.default_sets || ex.default_reps || ex.default_duration || ex.default_weight) && ' · '}
                     {[
-                      ex.default_sets   && `${ex.default_sets} sets`,
-                      ex.default_reps   && `${ex.default_reps} reps`,
-                      ex.default_weight && `${ex.default_weight} lbs`,
+                      ex.default_sets     && `${ex.default_sets} sets`,
+                      ex.exercise_type !== 'timed' && ex.default_reps && `${ex.default_reps} reps`,
+                      ex.exercise_type === 'timed' && ex.default_duration && `${ex.default_duration}s`,
+                      ex.default_weight   && `${ex.default_weight} lbs`,
                     ].filter(Boolean).join(' × ')}
                   </p>
                 </div>

@@ -6,6 +6,15 @@ Format: each entry is a date heading with bullet points grouped by **Coach**, **
 
 ---
 
+## 2026-04-10
+
+**Coach + Client**
+- **Timed exercises with countdown timer.** Exercises in the library can now be marked as "Timed Hold" (e.g. planks, wall sits). Meg sets the target duration in seconds, and clients see a circular countdown timer with Start / Pause / Reset controls during the workout. When the timer hits zero it vibrates. The actuals row shows Sets + Time Held instead of Sets + Reps.
+- Timer works in both client self-logging and the coach in-person logger.
+- History and program editor updated to display duration targets and actuals for timed exercises.
+
+---
+
 ## 2026-04-09
 
 **Coach**
