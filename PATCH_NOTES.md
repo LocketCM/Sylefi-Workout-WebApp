@@ -9,9 +9,16 @@ Format: each entry is a date heading with bullet points grouped by **Coach**, **
 ## 2026-04-10
 
 **Coach + Client**
-- **Timed exercises with countdown timer.** Exercises in the library can now be marked as "Timed Hold" (e.g. planks, wall sits). Meg sets the target duration in seconds, and clients see a circular countdown timer with Start / Pause / Reset controls during the workout. When the timer hits zero it vibrates. The actuals row shows Sets + Time Held instead of Sets + Reps.
+- **Timed exercises with countdown timer.** Exercises in the library can now be marked as "Timed Hold" (e.g. planks, wall sits). Meg sets the target duration in seconds, and clients see a circular countdown timer with Start / Pause / Reset controls during the workout. When the timer hits zero it vibrates and **auto-counts the set** — the client doesn't have to type anything, the timer finishing IS the rep.
+- Timer shows set progress ("Set 2 of 3") and prompts "Next Set" after each completion.
 - Timer works in both client self-logging and the coach in-person logger.
 - History and program editor updated to display duration targets and actuals for timed exercises.
+
+**Coach — Program Editor**
+- **Inline exercise type toggle.** Each exercise row now has a ⏱ timer icon that flips it between rep-based and timed — works on published programs too, so Meg can adjust on the fly without rebuilding.
+- **Workout Templates.** Save any workout card as a reusable template with a name + optional category (Lower, Upper, Push, Pull, etc.). Next time she builds a program, "From Template" lets her drop in the whole workout with one tap.
+- **Duplicate workout.** Copy icon on each workout card clones it in place — great for repeating a session across weeks.
+- Program templates (entire multi-week plans) still exist; workout templates (single sessions) are the new granularity below that.
 
 ---
 

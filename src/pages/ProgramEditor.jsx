@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft, Plus, Trash2, ChevronUp, ChevronDown, Search,
   Save, Send, MessageSquarePlus, X, UserPlus, Bookmark, Copy,
+  Timer, BookmarkPlus, LayoutList,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AssignClientModal from '@/components/AssignClientModal';
@@ -55,6 +56,10 @@ export default function ProgramEditor() {
   // 'clone'  = clone a template into a new program for a client.
   const [assignMode, setAssignMode] = useState(null); // null | 'assign' | 'clone'
 
+  // Workout template features
+  const [savingTplFor, setSavingTplFor] = useState(null); // workout to save as template
+  const [wktTplPicker, setWktTplPicker] = useState(false); // show workout template picker
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -93,6 +98,41 @@ export default function ProgramEditor() {
   // ---- Workout-level helpers -----------------------------------------------
   function addWorkout() {
     setWorkouts((ws) => [...ws, { id: rid(), title: '', coach_note: '', exercises: [] }]);
+  }
+  function duplicateWorkout(wid) {
+    setWorkouts((ws) => {
+      const src = ws.find((w) => w.id === wid);
+      if (!src) return ws;
+      const copy = {
+        ...src,
+        id: rid(),
+        title: src.title ? `${src.title} (copy)` : '',
+        exercises: src.exercises.map((e) => ({ ...e, id: rid() })),
+      };
+      const idx = ws.findIndex((w) => w.id === wid);
+      const next = [...ws];
+      next.splice(idx + 1, 0, copy);
+      return next;
+    });
+  }
+  function addWorkoutFromTemplate(tpl) {
+    setWorkouts((ws) => [...ws, {
+      id: rid(),
+      title: tpl.title || '',
+      coach_note: '',
+      exercises: (tpl.exercises ?? []).map((e) => ({
+        id: rid(),
+        exercise_id: e.exercise_id ?? null,
+        name: e.name ?? '',
+        video_url: e.video_url ?? null,
+        exercise_type: e.exercise_type ?? 'reps',
+        sets: e.sets ?? null,
+        reps: e.reps ?? null,
+        duration: e.duration ?? null,
+        weight: e.weight ?? null,
+        coach_note: e.coach_note ?? '',
+      })),
+    }]);
   }
   function removeWorkout(wid) {
     if (!confirm('Delete this workout from the program?')) return;
@@ -475,15 +515,25 @@ export default function ProgramEditor() {
             onRemoveExercise={(eid) => removeExercise(w.id, eid)}
             onUpdateExercise={(eid, patch) => updateExercise(w.id, eid, patch)}
             onMoveExercise={(eid, dir) => moveExercise(w.id, eid, dir)}
+            onDuplicate={() => duplicateWorkout(w.id)}
+            onSaveAsTemplate={() => setSavingTplFor(w)}
           />
         ))}
 
-        <button
-          onClick={addWorkout}
-          className="w-full py-6 rounded-xl border-2 border-dashed border-border text-muted-foreground hover:border-primary/60 hover:text-primary transition flex items-center justify-center gap-2 font-medium"
-        >
-          <Plus size={18} /> Add Workout
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={addWorkout}
+            className="flex-1 py-6 rounded-xl border-2 border-dashed border-border text-muted-foreground hover:border-primary/60 hover:text-primary transition flex items-center justify-center gap-2 font-medium"
+          >
+            <Plus size={18} /> Blank Workout
+          </button>
+          <button
+            onClick={() => setWktTplPicker(true)}
+            className="flex-1 py-6 rounded-xl border-2 border-dashed border-border text-muted-foreground hover:border-accent/60 hover:text-accent transition flex items-center justify-center gap-2 font-medium"
+          >
+            <LayoutList size={18} /> From Template
+          </button>
+        </div>
       </div>
 
       {/* Sticky footer with save/publish actions */}
@@ -601,6 +651,22 @@ export default function ProgramEditor() {
           onConfirm={cloneTemplateForClient}
         />
       )}
+
+      {/* Save workout as template */}
+      {savingTplFor && (
+        <SaveWorkoutTemplateModal
+          workout={savingTplFor}
+          onClose={() => setSavingTplFor(null)}
+        />
+      )}
+
+      {/* Pick from workout templates */}
+      {wktTplPicker && (
+        <WorkoutTemplatePicker
+          onClose={() => setWktTplPicker(false)}
+          onPick={(tpl) => { addWorkoutFromTemplate(tpl); setWktTplPicker(false); }}
+        />
+      )}
     </div>
   );
 }
@@ -611,6 +677,7 @@ export default function ProgramEditor() {
 function WorkoutCard({
   index, workout, total, onUpdate, onRemove, onMove,
   onOpenPicker, onRemoveExercise, onUpdateExercise, onMoveExercise,
+  onDuplicate, onSaveAsTemplate,
 }) {
   const [showNote, setShowNote] = useState(Boolean(workout.coach_note));
 
@@ -651,6 +718,21 @@ function WorkoutCard({
           title="Add coach note"
         >
           <MessageSquarePlus size={16} />
+        </button>
+        <button
+          onClick={onDuplicate}
+          className="p-2 rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition"
+          title="Duplicate this workout"
+        >
+          <Copy size={16} />
+        </button>
+        <button
+          onClick={onSaveAsTemplate}
+          disabled={workout.exercises.length === 0}
+          className="p-2 rounded-lg text-muted-foreground hover:bg-accent/10 hover:text-accent transition disabled:opacity-30"
+          title="Save as Workout Template"
+        >
+          <BookmarkPlus size={16} />
         </button>
         <button
           onClick={onRemove}
@@ -702,6 +784,7 @@ function WorkoutCard({
 // ---------------------------------------------------------------------------
 function ExerciseRow({ exercise, index, total, onUpdate, onRemove, onMove }) {
   const [showNote, setShowNote] = useState(Boolean(exercise.coach_note));
+  const isTimed = exercise.exercise_type === 'timed';
 
   return (
     <div className="rounded-lg bg-background border border-border p-3">
@@ -725,6 +808,18 @@ function ExerciseRow({ exercise, index, total, onUpdate, onRemove, onMove }) {
           </button>
         </div>
         <p className="flex-1 font-medium text-sm truncate">{exercise.name}</p>
+        {/* Inline type toggle — lets Meg flip reps↔timed on the fly */}
+        <button
+          onClick={() => onUpdate({ exercise_type: isTimed ? 'reps' : 'timed' })}
+          className={`p-1.5 rounded transition ${
+            isTimed
+              ? 'text-accent bg-accent/10 hover:bg-accent/20'
+              : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+          }`}
+          title={isTimed ? 'Timed — click to switch to reps' : 'Rep-based — click to switch to timed'}
+        >
+          <Timer size={14} />
+        </button>
         <button
           onClick={() => setShowNote((v) => !v)}
           className="p-1.5 rounded text-muted-foreground hover:bg-secondary hover:text-foreground transition"
@@ -743,7 +838,7 @@ function ExerciseRow({ exercise, index, total, onUpdate, onRemove, onMove }) {
 
       <div className="grid grid-cols-3 gap-2">
         <NumField label="Sets" value={exercise.sets} onChange={(v) => onUpdate({ sets: v })} />
-        {exercise.exercise_type === 'timed' ? (
+        {isTimed ? (
           <NumField label="Duration (sec)" value={exercise.duration} onChange={(v) => onUpdate({ duration: v })} />
         ) : (
           <NumField label="Reps" value={exercise.reps} onChange={(v) => onUpdate({ reps: v })} />
@@ -920,6 +1015,231 @@ function ExercisePicker({ library, onClose, onPick }) {
                   : `Add ${selectedIds.length} exercises`}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SaveWorkoutTemplateModal — save a workout (with its exercises) as a
+// reusable workout template. Meg gives it a name + optional category.
+// ---------------------------------------------------------------------------
+const WKT_CATEGORIES = ['Lower', 'Upper', 'Push', 'Pull', 'Full Body', 'Cardio', 'Core', 'Other'];
+
+function SaveWorkoutTemplateModal({ workout, onClose }) {
+  const [title, setTitle] = useState(workout.title || '');
+  const [cat, setCat]     = useState('');
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState('');
+
+  async function save(e) {
+    e.preventDefault();
+    if (!title.trim()) { setError('Give the template a name.'); return; }
+    setBusy(true);
+    setError('');
+    const { error: saveErr } = await supabase
+      .from('workout_templates')
+      .insert({
+        title: title.trim(),
+        category: cat || null,
+        exercises: workout.exercises.map((ex) => ({
+          exercise_id:   ex.exercise_id,
+          name:          ex.name,
+          video_url:     ex.video_url,
+          exercise_type: ex.exercise_type ?? 'reps',
+          sets:          ex.sets   === '' || ex.sets   == null ? null : Number(ex.sets),
+          reps:          ex.reps   === '' || ex.reps   == null ? null : Number(ex.reps),
+          duration:      ex.duration === '' || ex.duration == null ? null : Number(ex.duration),
+          weight:        ex.weight === '' || ex.weight == null ? null : Number(ex.weight),
+          coach_note:    (ex.coach_note ?? '').trim(),
+        })),
+      });
+    setBusy(false);
+    if (saveErr) { setError(saveErr.message); return; }
+    if (navigator.vibrate) navigator.vibrate(20);
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-card border border-border rounded-2xl w-full max-w-md p-6 shadow-xl animate-fade-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-playfair font-semibold text-xl">Save as Workout Template</h2>
+          <button onClick={onClose} className="p-1 rounded hover:bg-secondary"><X size={18} /></button>
+        </div>
+
+        <form onSubmit={save} className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Saves <strong className="text-foreground">{workout.exercises.length} exercise{workout.exercises.length === 1 ? '' : 's'}</strong> as
+            a reusable template. Next time you build a program, pick it from "From Template" to
+            slot everything in with one tap.
+          </p>
+
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Template name</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Lower Body A"
+              autoFocus
+              className="w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Category (optional)</label>
+            <select
+              value={cat}
+              onChange={(e) => setCat(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+            >
+              <option value="">None</option>
+              {WKT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          {error && (
+            <div className="px-3 py-2 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>
+          )}
+
+          <button
+            type="submit"
+            disabled={busy || !title.trim()}
+            className="w-full py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90 disabled:opacity-50 text-sm"
+          >
+            {busy ? 'Saving…' : 'Save Template'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// WorkoutTemplatePicker — pick a saved workout template to add to the
+// current program. Shows all templates, filterable by category + search.
+// Also allows deleting templates she no longer needs.
+// ---------------------------------------------------------------------------
+function WorkoutTemplatePicker({ onClose, onPick }) {
+  const [templates, setTemplates] = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState('');
+  const [q, setQ]                 = useState('');
+  const [cat, setCat]             = useState('all');
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const { data, error: e } = await supabase
+        .from('workout_templates')
+        .select('*')
+        .order('title', { ascending: true });
+      if (e) setError(e.message);
+      else setTemplates(data ?? []);
+      setLoading(false);
+    })();
+  }, []);
+
+  async function deleteTpl(id) {
+    if (!confirm('Delete this workout template?')) return;
+    const { error: e } = await supabase.from('workout_templates').delete().eq('id', id);
+    if (e) { setError(e.message); return; }
+    setTemplates((t) => t.filter((x) => x.id !== id));
+  }
+
+  const cats = [...new Set(templates.map((t) => t.category).filter(Boolean))];
+  const filtered = templates.filter((t) => {
+    if (cat !== 'all' && t.category !== cat) return false;
+    if (q.trim()) {
+      const needle = q.toLowerCase();
+      if (!t.title.toLowerCase().includes(needle)) return false;
+    }
+    return true;
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-card border border-border rounded-2xl w-full max-w-lg p-4 shadow-xl animate-fade-in max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-playfair font-semibold text-lg">Workout Templates</h2>
+          <button onClick={onClose} className="p-1 rounded hover:bg-secondary"><X size={18} /></button>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          Tap a template to add it as a workout in your program.
+        </p>
+
+        <div className="flex gap-2 mb-3">
+          <div className="relative flex-1">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              autoFocus
+              type="text"
+              placeholder="Search…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="w-full pl-8 pr-3 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+            />
+          </div>
+          {cats.length > 0 && (
+            <select
+              value={cat}
+              onChange={(e) => setCat(e.target.value)}
+              className="px-2 py-2 rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring text-sm"
+            >
+              <option value="all">All</option>
+              {cats.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          )}
+        </div>
+
+        {error && (
+          <div className="mb-2 px-3 py-2 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>
+        )}
+
+        <div className="flex-1 overflow-y-auto -mx-1 px-1 space-y-1">
+          {loading ? (
+            <p className="text-sm text-muted-foreground text-center py-8">Loading…</p>
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-sm text-muted-foreground">
+                {templates.length === 0
+                  ? 'No workout templates yet. Save one from a workout card using the bookmark+ button.'
+                  : 'No templates match your search.'}
+              </p>
+            </div>
+          ) : filtered.map((tpl) => (
+            <div
+              key={tpl.id}
+              className="rounded-lg border border-border bg-background p-3 hover:border-primary/60 transition flex items-center gap-3"
+            >
+              <button
+                onClick={() => onPick(tpl)}
+                className="flex-1 text-left min-w-0"
+              >
+                <p className="font-medium text-sm truncate">{tpl.title}</p>
+                <p className="text-xs text-muted-foreground">
+                  {tpl.category && <span className="text-accent">{tpl.category}</span>}
+                  {tpl.category && ' · '}
+                  {(tpl.exercises?.length ?? 0)} exercise{(tpl.exercises?.length ?? 0) === 1 ? '' : 's'}
+                </p>
+              </button>
+              <button
+                onClick={() => deleteTpl(tpl.id)}
+                className="p-1.5 rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition flex-shrink-0"
+                title="Delete template"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
         </div>
       </div>
     </div>

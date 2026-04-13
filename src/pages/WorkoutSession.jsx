@@ -450,9 +450,18 @@ export function ExerciseLogCard({ log, index, unit = 'lbs', onUpdate, onToggleCo
       {isTimed && log.target_duration && (
         <CountdownTimer
           targetSeconds={log.target_duration}
-          onComplete={(actualSecs) =>
-            onUpdate({ duration_completed: actualSecs })
-          }
+          setsCompleted={log.sets_completed}
+          targetSets={log.target_sets}
+          onComplete={(actualSecs) => {
+            // Auto-increment sets_completed so the client doesn't have to
+            // type anything — the timer finishing IS the rep.
+            const prevSets = Number(log.sets_completed) || 0;
+            onUpdate({
+              sets_completed: prevSets + 1,
+              duration_completed: `${actualSecs}s`,
+              _needsActuals: false,
+            });
+          }}
         />
       )}
 
@@ -603,21 +612,42 @@ export function fmtSecs(s) {
 // when the clock hits zero. Independent of the data layer — ExerciseLogCard
 // decides what to do with the result.
 // ---------------------------------------------------------------------------
-function CountdownTimer({ targetSeconds, onComplete }) {
+function CountdownTimer({ targetSeconds, setsCompleted = 0, targetSets, onComplete }) {
   const [remaining, setRemaining] = useState(targetSeconds);
   const [status, setStatus]       = useState('idle'); // idle | running | paused | done
   const intervalRef = useRef(null);
 
+  const doneSets = Number(setsCompleted) || 0;
+  const totalSets = Number(targetSets) || 0;
+  const allSetsDone = totalSets > 0 && doneSets >= totalSets;
+
   function clear() { if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; } }
 
   function start() {
-    if (status === 'done') {
-      // Reset first if we're restarting after completion
-      setRemaining(targetSeconds);
-    }
+    // Always reset timer for the next set
+    setRemaining(targetSeconds);
     setStatus('running');
     const startedAt = Date.now();
-    const startRemaining = status === 'done' ? targetSeconds : remaining;
+    clear();
+    intervalRef.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      const next = targetSeconds - elapsed;
+      if (next <= 0) {
+        setRemaining(0);
+        setStatus('done');
+        clear();
+        if (navigator.vibrate) navigator.vibrate([100, 80, 100, 80, 200]);
+        onComplete?.(targetSeconds);
+      } else {
+        setRemaining(next);
+      }
+    }, 250);
+  }
+
+  function resume() {
+    setStatus('running');
+    const startedAt = Date.now();
+    const startRemaining = remaining;
     clear();
     intervalRef.current = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startedAt) / 1000);
@@ -631,7 +661,7 @@ function CountdownTimer({ targetSeconds, onComplete }) {
       } else {
         setRemaining(next);
       }
-    }, 250); // check 4× per second for smooth display
+    }, 250);
   }
 
   function pause() {
@@ -645,10 +675,7 @@ function CountdownTimer({ targetSeconds, onComplete }) {
     clear();
   }
 
-  // Cleanup on unmount
   useEffect(() => () => clear(), []);
-
-  // If target changes (e.g. coach edits mid-session), reset
   useEffect(() => {
     if (status === 'idle') setRemaining(targetSeconds);
   }, [targetSeconds]);
@@ -660,7 +687,15 @@ function CountdownTimer({ targetSeconds, onComplete }) {
     <div className={`rounded-lg border p-3 mb-2 text-center transition ${
       isDone ? 'bg-primary/10 border-primary/40' : 'bg-secondary/50 border-border'
     }`}>
-      {/* Circular-ish progress bar */}
+      {/* Set progress line */}
+      {totalSets > 0 && (
+        <p className="text-xs text-muted-foreground mb-2">
+          Set <span className="font-semibold text-foreground">{Math.min(doneSets + 1, totalSets)}</span> of {totalSets}
+          {allSetsDone && <span className="text-primary font-medium"> — All sets done!</span>}
+        </p>
+      )}
+
+      {/* Circular progress ring */}
       <div className="relative w-20 h-20 mx-auto mb-2">
         <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
           <circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" className="text-border" strokeWidth="2.5" />
@@ -680,17 +715,30 @@ function CountdownTimer({ targetSeconds, onComplete }) {
         </div>
       </div>
 
-      {isDone && (
-        <p className="text-xs font-medium text-primary mb-2">Time's up!</p>
+      {isDone && !allSetsDone && (
+        <p className="text-xs font-medium text-primary mb-2">
+          Set complete! {totalSets > 0 ? `${totalSets - doneSets} set${totalSets - doneSets === 1 ? '' : 's'} to go.` : "Time's up!"}
+        </p>
+      )}
+      {isDone && allSetsDone && (
+        <p className="text-xs font-medium text-primary mb-2">All sets finished!</p>
       )}
 
       <div className="flex items-center justify-center gap-2">
-        {(status === 'idle' || status === 'paused') && (
+        {status === 'idle' && (
           <button
             onClick={start}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
+          >
+            <Play size={14} /> {doneSets > 0 ? 'Start Next Set' : 'Start Timer'}
+          </button>
+        )}
+        {status === 'paused' && (
+          <button
+            onClick={resume}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition"
           >
-            <Play size={12} /> {status === 'paused' ? 'Resume' : 'Start'}
+            <Play size={12} /> Resume
           </button>
         )}
         {status === 'running' && (
@@ -701,12 +749,12 @@ function CountdownTimer({ targetSeconds, onComplete }) {
             <Pause size={12} /> Pause
           </button>
         )}
-        {status === 'done' && (
+        {status === 'done' && !allSetsDone && (
           <button
             onClick={start}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
           >
-            <Play size={12} /> Again
+            <Play size={14} /> Next Set
           </button>
         )}
         {status !== 'idle' && (
