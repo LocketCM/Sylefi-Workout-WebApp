@@ -15,9 +15,29 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    # Vite bakes VITE_* env vars into the bundle at build time, so they MUST
+    # be available during `npm run build`. Configured as repository secrets
+    # at Settings → Secrets and variables → Actions.
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Verify required Vite env vars are set
+        # Fail loudly before we spend a build cycle producing a broken bundle.
+        # Without this, a missing secret silently ships a "supabaseUrl is
+        # required" white screen to prod.
+        run: |
+          missing=()
+          [ -z "$VITE_SUPABASE_URL" ]      && missing+=("VITE_SUPABASE_URL")
+          [ -z "$VITE_SUPABASE_ANON_KEY" ] && missing+=("VITE_SUPABASE_ANON_KEY")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required secret(s): ${missing[*]}"
+            echo "Set them at https://github.com/${{ github.repository }}/settings/secrets/actions"
+            exit 1
+          fi
 
       - name: Setup Node
         uses: actions/setup-node@v4
