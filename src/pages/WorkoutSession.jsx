@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  ArrowLeft, Check, Play, Pause, RotateCcw, ExternalLink, MessageSquare,
+  ArrowLeft, Check, Play, Pause, RotateCcw, Square, ExternalLink, MessageSquare,
   ChevronDown, ChevronUp, Timer,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -608,6 +608,228 @@ export function fmtSecs(s) {
 }
 
 // ---------------------------------------------------------------------------
+// Timer audio
+//
+// Mobile browsers (iOS Safari especially) suspend audio when JS timers fire
+// outside a user gesture — so a beep scheduled via setTimeout/setInterval
+// after a 30-second wait often won't play. The fix is to pre-schedule the
+// done beep on the Web Audio engine the moment the user taps Start, using
+// audio-clock timing. The OS/audio engine handles playback even if the JS
+// thread is throttled or the screen locks.
+// ---------------------------------------------------------------------------
+
+// Shared, lazily-created AudioContext. Mobile browsers limit context creation
+// and require a user gesture to unlock — keeping one around and resuming it
+// on every gesture is more reliable than spinning up new ones.
+let sharedAudioCtx = null;
+function getAudioCtx() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    if (!sharedAudioCtx) sharedAudioCtx = new Ctx();
+    if (sharedAudioCtx.state === 'suspended') {
+      // resume() is best-effort — fire and forget.
+      sharedAudioCtx.resume().catch(() => {});
+    }
+    // Kick off the alarm-sample preload as soon as the context exists. The
+    // first call returns null synchronously; later calls return the buffer
+    // once decoded.
+    ensureAlarmBuffer();
+    return sharedAudioCtx;
+  } catch { return null; }
+}
+
+// ---- Alarm sample (mixkit slot-machine-win) -------------------------------
+// We split the load into two stages so the buffer is ready by the time a
+// timer ends:
+//   1. Fetch the wav bytes at module load — no AudioContext needed yet.
+//   2. Decode the bytes the moment the AudioContext is created (first user
+//      gesture). decodeAudioData is async but fast (~30ms for this size).
+// scheduleAlarmLoop reads `alarmBuffer` synchronously; if it's not ready yet
+// (only the very first short-timer run of a fresh page), the synth chime
+// fallback kicks in.
+const ALARM_URL = `${import.meta.env.BASE_URL}sounds/timer-alarm.wav`;
+let alarmBytesPromise  = null; // Promise<ArrayBuffer | null>
+let alarmBufferPromise = null; // Promise<AudioBuffer | null>
+let alarmBuffer        = null; // resolved AudioBuffer, available synchronously
+
+function preloadAlarmBytes() {
+  if (alarmBytesPromise) return alarmBytesPromise;
+  if (typeof fetch !== 'function') return Promise.resolve(null);
+  alarmBytesPromise = fetch(ALARM_URL)
+    .then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status} for ${ALARM_URL}`);
+      return r.arrayBuffer();
+    })
+    .catch(err => {
+      console.warn('[timer-alarm] fetch failed:', err);
+      alarmBytesPromise = null; // allow retry on next call
+      return null;
+    });
+  return alarmBytesPromise;
+}
+// Kick off the fetch the moment this module is imported (page load).
+if (typeof window !== 'undefined') preloadAlarmBytes();
+
+// Promise-shaped sibling of ensureAlarmBuffer. Resolves to the AudioBuffer
+// once both the fetch and decode complete, or null on failure. Callers can
+// `.then()` this to schedule the sample as soon as it's ready, even if the
+// timer ends before decode finishes.
+function whenAlarmBufferReady() {
+  if (alarmBuffer) return Promise.resolve(alarmBuffer);
+  if (alarmBufferPromise) return alarmBufferPromise;
+  const ctx = sharedAudioCtx;
+  if (!ctx) return Promise.resolve(null);
+  alarmBufferPromise = preloadAlarmBytes().then(bytes => {
+    if (!bytes) return null;
+    // slice(0) hands decodeAudioData a private copy — some browsers neuter
+    // the underlying ArrayBuffer after decode, which would block retries.
+    return ctx.decodeAudioData(bytes.slice(0))
+      .then(buf => {
+        alarmBuffer = buf;
+        return buf;
+      })
+      .catch(err => {
+        console.warn('[timer-alarm] decode failed:', err);
+        alarmBufferPromise = null; // allow retry
+        return null;
+      });
+  });
+  return alarmBufferPromise;
+}
+
+// Synchronous accessor — returns the buffer if already decoded, otherwise
+// kicks off the decode pipeline and returns null. Used by callers that
+// want the fast path; the slow path uses whenAlarmBufferReady().
+function ensureAlarmBuffer() {
+  if (alarmBuffer) return alarmBuffer;
+  whenAlarmBufferReady();
+  return null;
+}
+
+// Build and start the looping AudioBufferSourceNode. startAt is the audio-
+// clock time the alarm was originally scheduled for; we clamp to ctx.currentTime
+// in case decode took longer than the timer's remaining time.
+function createAlarmSource(ctx, buffer, startAt) {
+  const t   = Math.max(startAt, ctx.currentTime);
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.loop   = true;
+  const gain = ctx.createGain();
+  gain.gain.value = 0.85;
+  src.connect(gain).connect(ctx.destination);
+  src.start(t);
+  return src;
+}
+
+// Schedule one tone "blip" on the given context at an absolute audio time.
+// Returns the oscillator so the caller can cancel it (osc.stop()) if needed.
+// shape: 'pulse' = fast attack, sustain at peak, fast release (square/buzz beeps).
+// shape: 'chime' = fast attack, long natural decay across the full duration (bells).
+function scheduleTone(ctx, freq, startAt, dur, {
+  type    = 'sine',
+  peak    = 0.25,
+  attack  = 0.01,
+  shape   = 'pulse',
+} = {}) {
+  const osc  = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.exponentialRampToValueAtTime(peak, startAt + attack);
+  if (shape === 'chime') {
+    // Bell-like: peak immediately, then a smooth exponential decay to silence
+    // over the entire duration. No sustain section.
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + dur);
+  } else {
+    // Pulse: hold at peak, then quick release at the tail.
+    gain.gain.setValueAtTime(peak, startAt + Math.max(attack, dur - 0.05));
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + dur);
+  }
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(startAt);
+  osc.stop(startAt + dur + 0.02);
+  return osc;
+}
+
+// Single short beep for "go". Plays immediately during a user gesture.
+function playStartBeep() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  scheduleTone(ctx, 880, ctx.currentTime, 0.15);
+}
+
+// Pre-schedule the repeating alarm starting `secondsFromNow` in the future.
+// Primary path: loop the slot-machine wav via AudioBufferSourceNode scheduled
+// on the audio clock. Fallback path (if the wav isn't decoded yet — rare,
+// only on a cold first-ever run): a synthesised triangle-wave ding-dong chime
+// so the user still gets an audible cue.
+// Pre-scheduling on the audio clock is what makes this reliable on phones with
+// the screen off — JS timers get throttled, but the audio engine doesn't.
+const ALARM_TOTAL_SECS = 180;
+
+function scheduleAlarmLoop(secondsFromNow) {
+  const ctx = getAudioCtx();
+  if (!ctx) return [];
+  const t0 = ctx.currentTime + Math.max(0, secondsFromNow);
+
+  // Fast path: buffer already decoded — schedule the sample on the audio
+  // clock and we're done.
+  if (alarmBuffer) {
+    return [createAlarmSource(ctx, alarmBuffer, t0)];
+  }
+
+  // Slow path: buffer is still decoding. Return a pending handle whose
+  // .stop() satisfies the same shape as a real node, so cancellation works
+  // through cancelScheduledTones unchanged. When decode resolves, fill in
+  // the source — t0 is captured up front, and createAlarmSource clamps to
+  // "now" if the timer already fired.
+  const pending = {
+    cancelled: false,
+    src: null,
+    stop() {
+      this.cancelled = true;
+      if (this.src) { try { this.src.stop(); } catch { /* ignore */ } }
+    },
+  };
+  whenAlarmBufferReady().then(buf => {
+    if (pending.cancelled) return;
+    const ctx2 = getAudioCtx();
+    if (!ctx2) return;
+    if (buf) {
+      pending.src = createAlarmSource(ctx2, buf, t0);
+    } else {
+      // Decode failed — fall back to synth chime starting from "now" so the
+      // user still gets a cue.
+      const start = Math.max(t0, ctx2.currentTime);
+      const CYCLE = 1.3, NOTE_GAP = 0.42, NOTE_DUR = 0.75;
+      const chimeOpts = { type: 'triangle', peak: 0.45, attack: 0.005, shape: 'chime' };
+      const cycles = Math.floor(ALARM_TOTAL_SECS / CYCLE);
+      const oscs = [];
+      for (let i = 0; i < cycles; i++) {
+        const cs = start + i * CYCLE;
+        oscs.push(scheduleTone(ctx2, 784,  cs,            NOTE_DUR, chimeOpts));
+        oscs.push(scheduleTone(ctx2, 1175, cs + NOTE_GAP, NOTE_DUR, chimeOpts));
+      }
+      // Attach the synth nodes so a later Stop press can cancel them too.
+      pending.src = {
+        stop() { for (const o of oscs) { try { o.stop(); } catch { /* ignore */ } } },
+      };
+    }
+  });
+  return [pending];
+}
+
+// Cancel a previously-scheduled alarm (used on pause/reset/stop). Works for
+// both OscillatorNode and AudioBufferSourceNode — both expose .stop().
+function cancelScheduledTones(nodes) {
+  for (const node of nodes ?? []) {
+    try { node.stop(); } catch { /* already stopped or never started */ }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // CountdownTimer — a simple start/pause/reset countdown. Fires onComplete
 // when the clock hits zero. Independent of the data layer — ExerciseLogCard
 // decides what to do with the result.
@@ -615,7 +837,10 @@ export function fmtSecs(s) {
 function CountdownTimer({ targetSeconds, setsCompleted = 0, targetSets, onComplete }) {
   const [remaining, setRemaining] = useState(targetSeconds);
   const [status, setStatus]       = useState('idle'); // idle | running | paused | done
+  const [alarmActive, setAlarmActive] = useState(false); // chime + vibration currently sounding
   const intervalRef = useRef(null);
+  const scheduledTonesRef = useRef([]); // oscillators queued for the alarm loop
+  const vibrateIntervalRef = useRef(null); // periodic vibration while alarm is sounding
 
   const doneSets = Number(setsCompleted) || 0;
   const totalSets = Number(targetSets) || 0;
@@ -623,10 +848,47 @@ function CountdownTimer({ targetSeconds, setsCompleted = 0, targetSets, onComple
 
   function clear() { if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; } }
 
+  function clearVibrate() {
+    // Only zero out the buzzer if we actually started one — calling
+    // navigator.vibrate before the user has tapped on the frame trips a
+    // Chrome intervention warning during React strict-mode double mounts.
+    const wasBuzzing = vibrateIntervalRef.current !== null;
+    if (vibrateIntervalRef.current) {
+      clearInterval(vibrateIntervalRef.current);
+      vibrateIntervalRef.current = null;
+    }
+    if (wasBuzzing && navigator.vibrate) { try { navigator.vibrate(0); } catch { /* ignore */ } }
+  }
+
+  function startAlarmVibrate() {
+    if (!navigator.vibrate) return;
+    // Buzz pattern fires immediately, then repeats every cycle until cleared.
+    const pattern = [400, 150, 400, 150, 400];
+    try { navigator.vibrate(pattern); } catch { /* ignore */ }
+    clearVibrate();
+    vibrateIntervalRef.current = setInterval(() => {
+      try { navigator.vibrate(pattern); } catch { /* ignore */ }
+    }, 1700);
+  }
+
+  function cancelDoneTones() {
+    cancelScheduledTones(scheduledTonesRef.current);
+    scheduledTonesRef.current = [];
+    clearVibrate();
+    setAlarmActive(false);
+  }
+
   function start() {
     // Always reset timer for the next set
     setRemaining(targetSeconds);
     setStatus('running');
+    // Audio: play the start blip and pre-schedule the done ding on the audio
+    // engine. Pre-scheduling is what makes the done sound reliable on phones —
+    // the beep is queued during this user gesture, so it plays even if JS
+    // timers get throttled when the screen sleeps.
+    playStartBeep();
+    cancelDoneTones();
+    scheduledTonesRef.current = scheduleAlarmLoop(targetSeconds);
     const startedAt = Date.now();
     clear();
     intervalRef.current = setInterval(() => {
@@ -636,7 +898,10 @@ function CountdownTimer({ targetSeconds, setsCompleted = 0, targetSets, onComple
         setRemaining(0);
         setStatus('done');
         clear();
-        if (navigator.vibrate) navigator.vibrate([100, 80, 100, 80, 200]);
+        // Keep scheduledTonesRef as-is — the alarm is now sounding off the
+        // audio engine and reset()/start() needs the refs to cancel it.
+        startAlarmVibrate();
+        setAlarmActive(true);
         onComplete?.(targetSeconds);
       } else {
         setRemaining(next);
@@ -646,6 +911,9 @@ function CountdownTimer({ targetSeconds, setsCompleted = 0, targetSets, onComple
 
   function resume() {
     setStatus('running');
+    // Re-schedule the alarm for whatever remains.
+    cancelDoneTones();
+    scheduledTonesRef.current = scheduleAlarmLoop(remaining);
     const startedAt = Date.now();
     const startRemaining = remaining;
     clear();
@@ -656,7 +924,8 @@ function CountdownTimer({ targetSeconds, setsCompleted = 0, targetSets, onComple
         setRemaining(0);
         setStatus('done');
         clear();
-        if (navigator.vibrate) navigator.vibrate([100, 80, 100, 80, 200]);
+        startAlarmVibrate();
+        setAlarmActive(true);
         onComplete?.(targetSeconds);
       } else {
         setRemaining(next);
@@ -667,15 +936,17 @@ function CountdownTimer({ targetSeconds, setsCompleted = 0, targetSets, onComple
   function pause() {
     setStatus('paused');
     clear();
+    cancelDoneTones();
   }
 
   function reset() {
     setStatus('idle');
     setRemaining(targetSeconds);
     clear();
+    cancelDoneTones();
   }
 
-  useEffect(() => () => clear(), []);
+  useEffect(() => () => { clear(); cancelDoneTones(); }, []);
   useEffect(() => {
     if (status === 'idle') setRemaining(targetSeconds);
   }, [targetSeconds]);
@@ -725,45 +996,59 @@ function CountdownTimer({ targetSeconds, setsCompleted = 0, targetSets, onComple
       )}
 
       <div className="flex items-center justify-center gap-2">
-        {status === 'idle' && (
+        {alarmActive ? (
+          // While the alarm is sounding, Stop is the only action — big,
+          // centered, red — so it's impossible to miss. Pressing it silences
+          // the alarm and reveals the normal Next Set / Reset row.
           <button
-            onClick={start}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
+            onClick={cancelDoneTones}
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-destructive text-destructive-foreground text-base font-semibold hover:opacity-90 transition shadow-md"
           >
-            <Play size={14} /> {doneSets > 0 ? 'Start Next Set' : 'Start Timer'}
+            <Square size={18} fill="currentColor" /> Stop
           </button>
-        )}
-        {status === 'paused' && (
-          <button
-            onClick={resume}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition"
-          >
-            <Play size={12} /> Resume
-          </button>
-        )}
-        {status === 'running' && (
-          <button
-            onClick={pause}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-accent-foreground text-xs font-medium hover:opacity-90 transition"
-          >
-            <Pause size={12} /> Pause
-          </button>
-        )}
-        {status === 'done' && !allSetsDone && (
-          <button
-            onClick={start}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
-          >
-            <Play size={14} /> Next Set
-          </button>
-        )}
-        {status !== 'idle' && (
-          <button
-            onClick={reset}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-muted-foreground text-xs font-medium hover:bg-secondary transition"
-          >
-            <RotateCcw size={12} /> Reset
-          </button>
+        ) : (
+          <>
+            {status === 'idle' && (
+              <button
+                onClick={start}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
+              >
+                <Play size={14} /> {doneSets > 0 ? 'Start Next Set' : 'Start Timer'}
+              </button>
+            )}
+            {status === 'paused' && (
+              <button
+                onClick={resume}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition"
+              >
+                <Play size={12} /> Resume
+              </button>
+            )}
+            {status === 'running' && (
+              <button
+                onClick={pause}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-accent-foreground text-xs font-medium hover:opacity-90 transition"
+              >
+                <Pause size={12} /> Pause
+              </button>
+            )}
+            {status === 'done' && !allSetsDone && (
+              <button
+                onClick={start}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition"
+              >
+                <Play size={14} /> Next Set
+              </button>
+            )}
+            {status !== 'idle' && (
+              <button
+                onClick={reset}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-muted-foreground text-xs font-medium hover:bg-secondary transition"
+              >
+                <RotateCcw size={12} /> Reset
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>
