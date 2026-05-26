@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { LogOut, Sun, Moon, Play, ChevronRight, Clock, MessageSquare, Check, History, Settings } from 'lucide-react';
+import { LogOut, Sun, Moon, Play, ChevronRight, ChevronDown, Clock, MessageSquare, Check, History, Settings, Sparkles } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useClientUnreadMessages } from '@/lib/useUnreadMessages';
@@ -163,6 +163,9 @@ export default function ClientDashboard() {
           <NotReadyYet />
         )}
 
+        {/* Quick Log — extra activity outside the program */}
+        {!loading && client && <QuickLogCard clientId={client.id} />}
+
         {/* Contact coach card — always present */}
         <Link
           to="/client/messages"
@@ -279,6 +282,137 @@ function WorkoutCard({ workout, index, status }) {
       </div>
       <Play size={18} className="text-primary flex-shrink-0" />
     </Link>
+  );
+}
+
+// ---- Quick Log card --------------------------------------------------------
+// Lets the client jot down extra activity outside their program. Posts to
+// client_quick_logs; Meg sees these merged into her Activity feed.
+function QuickLogCard({ clientId }) {
+  const [open, setOpen]         = useState(false);
+  const [exercise, setExercise] = useState('');
+  const [sets, setSets]         = useState('');
+  const [notes, setNotes]       = useState('');
+  const [saving, setSaving]     = useState(false);
+  const [savedAt, setSavedAt]   = useState(0);
+  const [error, setError]       = useState('');
+
+  async function handleSave(e) {
+    e.preventDefault();
+    const ex = exercise.trim();
+    if (!ex) return;
+    setSaving(true);
+    setError('');
+    const { error: insertErr } = await supabase.from('client_quick_logs').insert({
+      client_id: clientId,
+      exercise:  ex,
+      sets:      sets === '' ? null : Math.max(0, Math.floor(Number(sets))) || null,
+      notes:     notes.trim() || null,
+    });
+    if (insertErr) {
+      setError(insertErr.message);
+    } else {
+      setExercise('');
+      setSets('');
+      setNotes('');
+      setSavedAt(Date.now());
+    }
+    setSaving(false);
+  }
+
+  function toggleOpen() {
+    setOpen((v) => !v);
+    setSavedAt(0); // clear any stale success message when toggling
+  }
+
+  return (
+    <div className="rounded-xl bg-card border border-border overflow-hidden">
+      <button
+        type="button"
+        onClick={toggleOpen}
+        className="w-full flex items-center gap-2 p-4 text-left hover:bg-secondary/40 transition"
+        aria-expanded={open}
+      >
+        <Sparkles size={16} className="text-accent flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <h3 className="font-medium text-sm">Quick Log Workout</h3>
+          {!open && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Tap to log extra activity outside your program.
+            </p>
+          )}
+        </div>
+        <ChevronDown
+          size={18}
+          className={`text-muted-foreground flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 -mt-1">
+          <p className="text-xs text-muted-foreground mb-3">
+            Log a walk, a class, anything that's not in your program.
+          </p>
+          <form onSubmit={handleSave} className="space-y-2">
+            <div>
+              <label className="text-[11px] uppercase tracking-wide text-muted-foreground">Exercise</label>
+              <input
+                type="text"
+                value={exercise}
+                onChange={(e) => setExercise(e.target.value)}
+                placeholder="e.g. Walk"
+                className="w-full mt-0.5 px-3 py-2 rounded-lg bg-background border border-border text-sm focus:outline-none focus:border-primary"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-1">
+                <label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Sets <span className="text-muted-foreground/60 normal-case">(optional)</span>
+                </label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  step="1"
+                  value={sets}
+                  onChange={(e) => setSets(e.target.value)}
+                  min="0"
+                  placeholder="—"
+                  className="w-full mt-0.5 px-3 py-2 rounded-lg bg-background border border-border text-sm focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="text-[11px] uppercase tracking-wide text-muted-foreground">Notes</label>
+                <input
+                  type="text"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="distance, time, etc."
+                  className="w-full mt-0.5 px-3 py-2 rounded-lg bg-background border border-border text-sm focus:outline-none focus:border-primary"
+                />
+              </div>
+            </div>
+
+            {error && <p className="text-xs text-destructive">{error}</p>}
+
+            <button
+              type="submit"
+              disabled={saving || !exercise.trim()}
+              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 hover:opacity-90 transition"
+            >
+              {saving ? 'Saving…' : 'Log it'}
+            </button>
+
+            {savedAt > 0 && !saving && (
+              <p className="text-xs text-primary text-center">
+                Logged! Meg will see it in her activity feed.
+              </p>
+            )}
+          </form>
+        </div>
+      )}
+    </div>
   );
 }
 

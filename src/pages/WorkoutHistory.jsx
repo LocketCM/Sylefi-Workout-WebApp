@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
-import { ArrowLeft, Check, Clock, ChevronDown, ChevronUp, MessageSquare, Dumbbell } from 'lucide-react';
+import { ArrowLeft, Check, Clock, ChevronDown, ChevronUp, MessageSquare, Dumbbell, Sparkles } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { formatWeight } from '@/lib/formatters';
@@ -20,6 +20,7 @@ export default function WorkoutHistory() {
 
   const [client, setClient] = useState(null);
   const [logs, setLogs]     = useState([]);
+  const [quickLogs, setQuickLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
 
@@ -45,16 +46,26 @@ export default function WorkoutHistory() {
       if (!c) { setError('Client not found.'); setLoading(false); return; }
       setClient(c);
 
-      // Pull all completed logs, newest first. We show in-progress logs too,
-      // labeled separately, so the client can resume from here as well.
-      const { data: ls, error: lErr } = await supabase
-        .from('workout_logs')
-        .select('*')
-        .eq('client_id', c.id)
-        .order('completed_at', { ascending: false, nullsFirst: false })
-        .order('created_at',   { ascending: false });
-      if (lErr) { setError(lErr.message); setLoading(false); return; }
+      // Pull workout logs and quick logs in parallel. Workouts power the
+      // structured "In progress" / "Completed" sections; quick logs are the
+      // freeform extras the client logged from their dashboard.
+      const [{ data: ls, error: lErr }, { data: qs, error: qErr }] = await Promise.all([
+        supabase
+          .from('workout_logs')
+          .select('*')
+          .eq('client_id', c.id)
+          .order('completed_at', { ascending: false, nullsFirst: false })
+          .order('created_at',   { ascending: false }),
+        supabase
+          .from('client_quick_logs')
+          .select('*')
+          .eq('client_id', c.id)
+          .order('created_at', { ascending: false }),
+      ]);
+      const e = lErr || qErr;
+      if (e) { setError(e.message); setLoading(false); return; }
       setLogs(ls ?? []);
+      setQuickLogs(qs ?? []);
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -86,6 +97,7 @@ export default function WorkoutHistory() {
             <p className="text-sm text-muted-foreground mt-1">
               {completed.length} completed workout{completed.length === 1 ? '' : 's'}
               {inProgress.length > 0 && ` · ${inProgress.length} in progress`}
+              {quickLogs.length > 0 && ` · ${quickLogs.length} quick log${quickLogs.length === 1 ? '' : 's'}`}
             </p>
           )}
         </div>
@@ -96,13 +108,18 @@ export default function WorkoutHistory() {
 
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : logs.length === 0 ? (
+        ) : logs.length === 0 && quickLogs.length === 0 ? (
           <EmptyState />
         ) : (
           <div className="space-y-6">
             {inProgress.length > 0 && (
               <Section title="In progress">
                 {inProgress.map((l) => <LogCard key={l.id} log={l} unit={client?.weight_unit ?? 'lbs'} />)}
+              </Section>
+            )}
+            {quickLogs.length > 0 && (
+              <Section title="Quick logs">
+                {quickLogs.map((q) => <QuickLogCard key={q.id} log={q} />)}
               </Section>
             )}
             {completed.length > 0 && (
@@ -219,12 +236,37 @@ function ExerciseLogLine({ log, unit = 'lbs' }) {
   );
 }
 
+// Compact card for a freeform quick log row. No expand/collapse — there's
+// not enough data per row to warrant it.
+function QuickLogCard({ log }) {
+  const dateStr = new Date(log.created_at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  return (
+    <div className="rounded-xl border bg-accent/5 border-accent/30 p-4">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-full bg-accent/15 text-accent flex items-center justify-center flex-shrink-0">
+          <Sparkles size={16} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-medium truncate">{log.exercise}</p>
+          <p className="text-xs text-muted-foreground">
+            {dateStr}
+            {log.sets ? ` · ${log.sets} set${log.sets === 1 ? '' : 's'}` : ''}
+          </p>
+          {log.notes && (
+            <p className="text-xs italic text-muted-foreground mt-1 whitespace-pre-wrap">{log.notes}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EmptyState() {
   return (
     <div className="rounded-xl border border-dashed border-border p-12 text-center">
       <Clock className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
       <p className="text-sm text-muted-foreground">
-        No workouts logged yet. Once a workout is finished it'll show up here.
+        Nothing logged yet. Completed workouts and quick logs will show up here.
       </p>
     </div>
   );

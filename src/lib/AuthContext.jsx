@@ -28,9 +28,9 @@ export function AuthProvider({ children }) {
 
   const user = session?.user ?? null;
 
-  // Coach detection — matches the is_coach() SQL function.
-  // Coach is identified by user_metadata.role === 'admin'.
-  const isCoach = user?.user_metadata?.role === 'admin';
+  // Coach detection — matches the is_coach() SQL function, which reads
+  // app_metadata.role (service-role writable only, so clients can't spoof it).
+  const isCoach = user?.app_metadata?.role === 'admin';
 
   const signIn = (email, password) =>
     supabase.auth.signInWithPassword({ email, password });

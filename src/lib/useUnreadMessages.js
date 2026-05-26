@@ -72,8 +72,8 @@ export function useClientUnreadMessages(clientId) {
   return count;
 }
 
-// Coach: count of completed workout_logs the coach hasn't seen yet.
-// Updates in realtime when clients finish workouts.
+// Coach: combined count of unseen activity — completed workouts AND quick
+// logs the client posted. Updates in realtime when either table changes.
 export function useCoachUnreadCompletions() {
   const [count, setCount] = useState(0);
 
@@ -81,18 +81,25 @@ export function useCoachUnreadCompletions() {
     let cancelled = false;
 
     async function load() {
-      const { count: c } = await supabase
-        .from('workout_logs')
-        .select('id', { count: 'exact', head: true })
-        .eq('workout_completed', true)
-        .eq('coach_seen', false);
-      if (!cancelled) setCount(c ?? 0);
+      const [{ count: w }, { count: q }] = await Promise.all([
+        supabase
+          .from('workout_logs')
+          .select('id', { count: 'exact', head: true })
+          .eq('workout_completed', true)
+          .eq('coach_seen', false),
+        supabase
+          .from('client_quick_logs')
+          .select('id', { count: 'exact', head: true })
+          .eq('coach_seen', false),
+      ]);
+      if (!cancelled) setCount((w ?? 0) + (q ?? 0));
     }
 
     load();
     const ch = supabase
       .channel('coach-unread-completions')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'workout_logs' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'client_quick_logs' }, load)
       .subscribe();
 
     return () => { cancelled = true; supabase.removeChannel(ch); };
