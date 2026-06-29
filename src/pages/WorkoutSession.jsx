@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  ArrowLeft, Check, Play, Pause, RotateCcw, Square, ExternalLink, MessageSquare,
+  ArrowLeft, Check, Play, Pause, RotateCcw, Square, MessageSquare,
   ChevronDown, ChevronUp, Timer,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { toDriveEmbedUrl, isDriveUrl } from '@/lib/driveVideo';
+import DriveVideoEmbed from '@/components/DriveVideoEmbed';
 import { formatWeight } from '@/lib/formatters';
 
 // Client-facing workout logger.
@@ -350,8 +350,6 @@ export default function WorkoutSession() {
 // — it doesn't care who's driving it.
 export function ExerciseLogCard({ log, index, unit = 'lbs', onUpdate, onToggleComplete }) {
   const [showVideo, setShowVideo] = useState(false);
-  const embedUrl = log.video_url ? toDriveEmbedUrl(log.video_url) : null;
-  const driveLink = log.video_url && isDriveUrl(log.video_url) ? log.video_url : null;
   const isTimed = log.exercise_type === 'timed';
 
   return (
@@ -417,30 +415,8 @@ export function ExerciseLogCard({ log, index, unit = 'lbs', onUpdate, onToggleCo
             {showVideo ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </button>
           {showVideo && (
-            <div className="mt-2 space-y-2">
-              {embedUrl ? (
-                <div className="aspect-video rounded-lg overflow-hidden bg-black">
-                  <iframe
-                    src={embedUrl}
-                    className="w-full h-full"
-                    allow="autoplay"
-                    allowFullScreen
-                    title={log.name}
-                  />
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">No embeddable preview.</p>
-              )}
-              {driveLink && (
-                <a
-                  href={driveLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"
-                >
-                  <ExternalLink size={11} /> Open in Drive
-                </a>
-              )}
+            <div className="mt-2">
+              <DriveVideoEmbed url={log.video_url} title={log.name} />
             </div>
           )}
         </div>

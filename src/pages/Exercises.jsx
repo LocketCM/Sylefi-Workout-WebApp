@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plus, Search, Pencil, Trash2, X, Dumbbell, Play, ExternalLink, Timer } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toDriveEmbedUrl } from '@/lib/driveVideo';
+import DriveVideoEmbed from '@/components/DriveVideoEmbed';
 
 // Categories match what the program builder will use later.
 // Keep this list in sync with any UI that filters by category.
@@ -211,13 +212,11 @@ function ExerciseCard({ exercise, onEdit, onDelete }) {
             </a>
           </div>
           {showVideo && embedUrl && (
-            <div className="mt-3 aspect-video rounded-lg overflow-hidden bg-black/80">
-              <iframe
-                src={embedUrl}
+            <div className="mt-3">
+              <DriveVideoEmbed
+                url={exercise.video_url}
                 title={`${exercise.name} demo`}
-                className="w-full h-full"
-                allow="autoplay"
-                allowFullScreen
+                showFallbackLink={false}
               />
             </div>
           )}
