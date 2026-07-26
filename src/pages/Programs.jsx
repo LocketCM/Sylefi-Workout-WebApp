@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Plus, ClipboardList, CheckCircle2, PenLine, AlertTriangle, Bookmark,
-  FolderPlus, LayoutList, Pencil, Trash2, X, Timer,
+  FolderPlus, LayoutList, Pencil, Trash2, X, Timer, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
